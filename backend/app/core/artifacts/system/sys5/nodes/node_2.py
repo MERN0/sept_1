@@ -21,10 +21,21 @@ IDEOGRAPHIC_ZERO = "〇"  # 〇
 
 class Node2FindSignalsAndCommands:
     """
-    Node 2, step 1: In the Master Comm Matrix (CAN) sheet, find the column
-    whose header matches the feature/sheet number (e.g. "019"), filter it
-    for rows marked with the ideographic zero character, and report the count.
+    Node 2: Find Signal Names from filtered rows in Master Comm Matrix and
+    extract Command details from Command List sheet.
     """
+
+    @staticmethod
+    def _find_command_list_file(input_folder: str):
+        """Auto-discover command list file in input folder"""
+        if not os.path.isdir(input_folder):
+            return None
+
+        for filename in os.listdir(input_folder):
+            if filename.lower().endswith('.xlsx'):
+                if 'command' in filename.lower() and 'list' in filename.lower():
+                    return os.path.join(input_folder, filename)
+        return None
 
     @staticmethod
     def execute(state: SYS5State) -> SYS5State:
@@ -61,6 +72,29 @@ class Node2FindSignalsAndCommands:
             state["errors"] = errors
             return state
 
+        # Find and load Command List file
+        command_list_file = Node2FindSignalsAndCommands._find_command_list_file(abs_input_folder)
+        if not command_list_file:
+            error_msg = f"Command List file not found in: {abs_input_folder}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        print(f"[LOG] Command List file: {command_list_file}\n")
+
+        try:
+            command_list_df = pd.read_excel(command_list_file, sheet_name="Command List")
+            print(f"[LOG] Command List loaded: {len(command_list_df)} rows\n")
+        except Exception as e:
+            error_msg = f"Could not load Command List: {str(e)}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        signals = []
+
         # Feature/sheet numbers to look up, derived from requirement IDs
         feature_nums = []
         for req in requirements:
@@ -70,7 +104,7 @@ class Node2FindSignalsAndCommands:
                 feature_nums.append(match.group(1))
 
         for feature_num in feature_nums:
-            print(f"[LOG] Searching header row for sheet name '{feature_num}'...")
+            print(f"[LOG] Processing feature '{feature_num}'...")
 
             feature_col = None
             for col in comm_matrix_df.columns:
@@ -89,12 +123,52 @@ class Node2FindSignalsAndCommands:
                 comm_matrix_df[feature_col].astype(str).str.contains(IDEOGRAPHIC_ZERO, na=False)
             ]
 
-            print(f"[LOG] Rows with ideographic zero (〇) under column '{feature_num}': {len(filtered)}\n")
+            print(f"[LOG] Rows with ideographic zero (〇): {len(filtered)}\n")
 
-        state["signals"] = []
+            # Extract Signal Names from filtered rows
+            if 'Signal Name' not in filtered.columns:
+                print(f"[LOG] 'Signal Name' column not found\n")
+                continue
+
+            for idx, row in filtered.iterrows():
+                signal_name = str(row['Signal Name']).strip()
+
+                # Search for signal name in Command List
+                cmd_match = command_list_df[
+                    command_list_df['Signal Name'].astype(str).str.strip() == signal_name
+                ]
+
+                if len(cmd_match) == 0:
+                    print(f"[LOG] Signal '{signal_name}' not found in Command List")
+                    continue
+
+                cmd_row = cmd_match.iloc[0]
+
+                # Extract columns C (Command Code) and E (Validation Method)
+                signal_data = {
+                    "req_id": "",
+                    "feature_number": feature_num,
+                    "signal_name": signal_name,
+                    "command_code": str(cmd_row['Command Code']),
+                    "validation_method": str(cmd_row['Validation Method'])
+                }
+
+                # Match signal to requirement
+                for req in requirements:
+                    req_id = req.get("req_id", "")
+                    match = re.search(r'(\d{3})', req_id)
+                    if match and match.group(1) == feature_num:
+                        signal_data["req_id"] = req_id
+                        break
+
+                signals.append(signal_data)
+                print(f"[LOG] Extracted: {signal_name} -> C: {signal_data['command_code']}, E: {signal_data['validation_method']}")
+
+        state["signals"] = signals
         state["feature_details"] = {}
         state["errors"] = errors
 
+        print(f"\n[LOG] Total signals extracted: {len(signals)}\n")
         print(f"{'='*80}")
         print("NODE 2 COMPLETED")
         print(f"{'='*80}\n")
