@@ -190,9 +190,12 @@ class Node5ExtractModelConfig:
             all_signal_variants.setdefault(signal_name, []).append(variant)
 
         print(f"[LOG] Model Input Mapping: {len(all_signal_variants)} distinct signals before filtering\n")
+        print(f"[DEBUG] Sample Model_Input_Mapping signal names: {list(all_signal_variants.keys())[:10]}\n")
 
         known_signal_names = Node5ExtractModelConfig._collect_known_signal_names(feature_details)
         known_normalized = {Node5ExtractModelConfig._normalize(n) for n in known_signal_names}
+        print(f"[DEBUG] Known signal names from feature_details ({len(known_signal_names)}): "
+              f"{list(known_signal_names)[:10]}\n")
 
         model_input_mapping = {}
         for signal_name, variants in all_signal_variants.items():
