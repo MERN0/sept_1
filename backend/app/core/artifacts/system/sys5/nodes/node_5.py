@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 import pandas as pd
 
@@ -26,9 +27,11 @@ class Node5ExtractModelConfig:
     configuration file. Neither sheet has a feature-number column or an
     ideographic-zero marker (unlike Nodes 2-4), so instead of that filter:
 
-    - Model_Input_Mapping is filtered down to only the signals already known
-      from state["feature_details"] (substring match, same idiom as Node 3
-      against Command List).
+    - Model_Input_Mapping is filtered down to only signals that token-match
+      either a known signal name from state["feature_details"], or a
+      factor/precondition/action field name from the generated test patterns
+      (e.g. "direction_switch" ~ MDL_SWH_DIR_STATE, "slope_angle" ~
+      MDL_SEN_Slope_Angle).
     - Tolerances is filtered down by keyword match between each row's
       Description and the requirement descriptions/verification
       criteria/test pattern content collected so far.
@@ -72,6 +75,48 @@ class Node5ExtractModelConfig:
                 if entry.get(key):
                     known.add(str(entry[key]))
         return known
+
+    @staticmethod
+    def _collect_factor_names(test_patterns):
+        """
+        Pull factor / precondition / action FIELD NAMES (not values) out of the
+        test pattern data, e.g. "direction_switch", "slope_angle", "load_capacity".
+        These describe what's being varied in testing, and tend to line up with
+        Model_Input_Mapping signal names (e.g. MDL_SWH_DIR_STATE, MDL_SEN_Slope_Angle)
+        far better than raw CAN signal names do.
+        """
+        names = set()
+        for pattern in test_patterns.values():
+            names.update(pattern.get("factors", {}).keys())
+            for tc in pattern.get("test_cases", []):
+                names.update(tc.get("preconditions", {}).keys())
+                names.update(tc.get("actions", {}).keys())
+        return names
+
+    @staticmethod
+    def _tokenize(name):
+        """Split a name into lowercase word tokens on underscores/spaces"""
+        return [t for t in re.split(r'[_\s]+', str(name).strip().lower()) if t]
+
+    @staticmethod
+    def _tokens_overlap(tokens_a, tokens_b, min_len=3):
+        """
+        True if any token from each side overlaps via substring containment
+        (either direction). Short tokens (< min_len) are skipped to avoid
+        trivial/noisy matches. This is deliberately looser than a whole-name
+        substring check, since e.g. "direction_switch" needs to match
+        "MDL_SWH_DIR_STATE" via the "dir"/"direction" token pair, not a full
+        string match.
+        """
+        for a in tokens_a:
+            if len(a) < min_len:
+                continue
+            for b in tokens_b:
+                if len(b) < min_len:
+                    continue
+                if a in b or b in a:
+                    return True
+        return False
 
     @staticmethod
     def _build_keyword_corpus(requirements, test_patterns):
@@ -192,23 +237,34 @@ class Node5ExtractModelConfig:
         print(f"[LOG] Model Input Mapping: {len(all_signal_variants)} distinct signals before filtering\n")
         print(f"[DEBUG] Sample Model_Input_Mapping signal names: {list(all_signal_variants.keys())[:10]}\n")
 
+        # Two match vocabularies: raw signal names already known from earlier nodes
+        # (feature_details), plus factor/precondition/action field NAMES from the
+        # test patterns (e.g. "direction_switch", "slope_angle", "load_capacity") -
+        # these describe *what's being varied* and tend to line up with Model_Input
+        # signal names (MDL_SWH_DIR_STATE, MDL_SEN_Slope_Angle) far better than raw
+        # CAN signal names do.
         known_signal_names = Node5ExtractModelConfig._collect_known_signal_names(feature_details)
-        known_normalized = {Node5ExtractModelConfig._normalize(n) for n in known_signal_names}
+        factor_names = Node5ExtractModelConfig._collect_factor_names(test_patterns)
+        match_vocabulary = known_signal_names | factor_names
         print(f"[DEBUG] Known signal names from feature_details ({len(known_signal_names)}): "
               f"{list(known_signal_names)[:10]}\n")
+        print(f"[DEBUG] Factor/precondition/action names from test patterns ({len(factor_names)}): "
+              f"{list(factor_names)[:10]}\n")
+
+        vocab_tokens = [Node5ExtractModelConfig._tokenize(v) for v in match_vocabulary]
 
         model_input_mapping = {}
         for signal_name, variants in all_signal_variants.items():
-            normalized_signal = Node5ExtractModelConfig._normalize(signal_name)
+            signal_tokens = Node5ExtractModelConfig._tokenize(signal_name)
             matched = any(
-                normalized_signal in known or known in normalized_signal
-                for known in known_normalized
+                Node5ExtractModelConfig._tokens_overlap(signal_tokens, vocab_tok)
+                for vocab_tok in vocab_tokens
             )
             if matched:
                 model_input_mapping[signal_name] = variants
 
         print(f"[LOG] Model Input Mapping: {len(all_signal_variants)} signals -> "
-              f"{len(model_input_mapping)} matched against known signals\n")
+              f"{len(model_input_mapping)} matched against known signals + test pattern factors\n")
 
         # --- Parse Tolerances (by column position) ---
         try:
