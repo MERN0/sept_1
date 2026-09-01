@@ -1,12 +1,13 @@
-from .sys5 import generate, extract_functional_requirements, save_requirements_to_json
-from .agent_graph import build_sys5_graph, run_sys5_workflow, SYS5Agent, SYS5State
+"""SYS5 - Requirements Extraction System"""
+
+from .sys5 import generate
+from .main import run_workflow
+from .state import SYS5State
+from .nodes import Node1ExtractRequirements
 
 __all__ = [
     'generate',
-    'extract_functional_requirements',
-    'save_requirements_to_json',
-    'build_sys5_graph',
-    'run_sys5_workflow',
-    'SYS5Agent',
-    'SYS5State'
+    'run_workflow',
+    'SYS5State',
+    'Node1ExtractRequirements'
 ]
