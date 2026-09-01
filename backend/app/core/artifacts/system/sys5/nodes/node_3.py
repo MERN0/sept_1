@@ -188,17 +188,17 @@ class Node3ExtractLogicalSignals:
                         break
 
                 if matched_row is not None:
-                    # Extract columns C (Command Code) and E (Validation Method)
+                    # Extract Command Name and Signal Description
                     signal_data = {
                         "feature_number": feature_num,
                         "logical_signal_name": logical_name,
                         "formatted_name": formatted_name,
-                        "command_code": str(matched_row['Command Code']),
-                        "validation_method": str(matched_row['Validation Method'])
+                        "command_name": str(matched_row.get('Command Name', '')),
+                        "signal_description": str(matched_row.get('Signal Description', ''))
                     }
 
                     logical_signals.append(signal_data)
-                    print(f"[LOG] {logical_name} -> {formatted_name} | C: {signal_data['command_code']}, E: {signal_data['validation_method']}")
+                    print(f"[LOG] {logical_name} -> {formatted_name} | Name: {signal_data['command_name']}, Desc: {signal_data['signal_description']}")
                 else:
                     print(f"[LOG] No match found for '{formatted_name}' in Command List")
 
