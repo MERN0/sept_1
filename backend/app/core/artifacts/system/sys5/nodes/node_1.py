@@ -3,8 +3,10 @@
 import json
 import os
 import sys
-import pandas as pd
 from typing import Dict, Any
+import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # Setup path for imports
 _workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
@@ -13,11 +15,15 @@ if _workspace_root not in sys.path:
 
 try:
     from ..state import SYS5State  # type: ignore
-    from ..utils import resolve_path, ensure_directory_exists  # type: ignore
+    from ..utils import (resolve_path, ensure_directory_exists, extract_verification_criteria,  # type: ignore
+                         prepare_test_pattern_prompt, parse_test_patterns_json, format_test_patterns_for_excel)
     from ..config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS  # type: ignore
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
-    from backend.app.core.artifacts.system.sys5.utils import resolve_path, ensure_directory_exists
+    from backend.app.core.artifacts.system.sys5.utils import (
+        resolve_path, ensure_directory_exists, extract_verification_criteria,
+        prepare_test_pattern_prompt, parse_test_patterns_json, format_test_patterns_for_excel
+    )
     from backend.app.core.artifacts.system.sys5.config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS
 
 
@@ -125,6 +131,14 @@ class Node1ExtractRequirements:
             # Summary
             print(f"\n[SUMMARY] Total functional requirements extracted: {len(requirements)}\n")
 
+            # Extract verification criteria from each requirement
+            print(f"\n[LOG] Extracting verification criteria from requirements...\n")
+            for req in requirements:
+                criteria = extract_verification_criteria(req["data"])
+                req["verification_criteria"] = criteria
+                if criteria:
+                    print(f"[LOG] Req {req.get('row_index')}: Found criteria: {criteria[:100]}...\n")
+
             # Create output directory
             ensure_directory_exists(abs_output_dir)
             print(f"[LOG] Output directory verified: {abs_output_dir}\n")
@@ -149,6 +163,124 @@ class Node1ExtractRequirements:
 
             print(f"[SUCCESS] Requirements saved to: {json_file}")
             print(f"[LOG] File size: {os.path.getsize(json_file)} bytes\n")
+
+            # Generate test patterns for requirements with verification criteria
+            print(f"\n[LOG] Generating test patterns using LLM...\n")
+            reference_format = """{
+  "test_cases": [
+    {
+      "test_case_no": 1,
+      "preconditions": {
+        "truck_size": "1t",
+        "discharge_capacity": "25%",
+        "power_control_mode": "P",
+        "direction_switch": "FWD",
+        "load_capacity": "NL"
+      },
+      "actions": {
+        "option_set": "Enabled",
+        "slope_angle": "0 deg"
+      },
+      "expected_result": "Description"
+    }
+  ]
+}"""
+
+            test_patterns_data = {}
+            for req in requirements:
+                if req.get("verification_criteria"):
+                    try:
+                        req_id = req["data"].get("REQ_ID", f"REQ_{req['row_index']}")
+                        req_desc = req["data"].get("Description", "")
+                        criteria = req["verification_criteria"]
+
+                        print(f"[LOG] Generating test pattern for {req_id}...")
+
+                        # Prepare prompt for LLM
+                        prompt = prepare_test_pattern_prompt(req_desc, criteria, reference_format)
+
+                        # Call Claude API for test pattern generation
+                        from anthropic import Anthropic
+                        client = Anthropic()
+                        response = client.messages.create(
+                            model="claude-3-5-sonnet-20241022",
+                            max_tokens=2000,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ]
+                        )
+
+                        # Parse response
+                        test_pattern_json = response.content[0].text
+                        test_patterns = parse_test_patterns_json(test_pattern_json)
+                        test_patterns_data[req_id] = test_patterns
+
+                        print(f"[LOG] Generated {len(test_patterns.get('test_cases', []))} test cases for {req_id}\n")
+
+                    except Exception as lm_error:
+                        print(f"[WARNING] Failed to generate test patterns for {req_id}: {str(lm_error)}\n")
+
+            # Save test patterns to Excel if generated
+            if test_patterns_data:
+                try:
+                    from openpyxl import Workbook
+
+                    excel_output = os.path.join(abs_output_dir, f"test_patterns_{timestamp}.xlsx")
+
+                    # Create workbook
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Test Pattern"
+
+                    # Add header
+                    headers = [
+                        "Requirement ID", "Test Case No", "Truck Size", "Discharge %",
+                        "Power Mode", "Direction", "Load Cap", "Option Set",
+                        "Slope Angle", "Expected Result"
+                    ]
+
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=1, column=col, value=header)
+                        cell.font = Font(bold=True, color="FFFFFF")
+                        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                    # Add test cases
+                    row = 2
+                    for req_id, test_patterns in test_patterns_data.items():
+                        for tc in test_patterns.get("test_cases", []):
+                            ws.cell(row=row, column=1, value=req_id)
+                            ws.cell(row=row, column=2, value=tc.get("test_case_no", ""))
+                            ws.cell(row=row, column=3, value=tc.get("preconditions", {}).get("truck_size", ""))
+                            ws.cell(row=row, column=4, value=tc.get("preconditions", {}).get("discharge_capacity", ""))
+                            ws.cell(row=row, column=5, value=tc.get("preconditions", {}).get("power_control_mode", ""))
+                            ws.cell(row=row, column=6, value=tc.get("preconditions", {}).get("direction_switch", ""))
+                            ws.cell(row=row, column=7, value=tc.get("preconditions", {}).get("load_capacity", ""))
+                            ws.cell(row=row, column=8, value=tc.get("actions", {}).get("option_set", ""))
+                            ws.cell(row=row, column=9, value=tc.get("actions", {}).get("slope_angle", ""))
+                            ws.cell(row=row, column=10, value=tc.get("expected_result", ""))
+                            row += 1
+
+                    # Auto-adjust column widths
+                    for col in ws.columns:
+                        max_length = 0
+                        for cell in col:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        ws.column_dimensions[col[0].column_letter].width = min(max_length + 2, 50)
+
+                    # Save workbook
+                    wb.save(excel_output)
+                    print(f"[SUCCESS] Test patterns saved to: {excel_output}\n")
+
+                except Exception as excel_error:
+                    print(f"[WARNING] Failed to save Excel: {str(excel_error)}\n")
 
         except Exception as e:
             error_msg = f"Error during extraction: {str(e)}"
