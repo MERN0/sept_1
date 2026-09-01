@@ -35,6 +35,18 @@ class Node3ExtractLogicalSignals:
         return None
 
     @staticmethod
+    def _find_command_list_file(input_folder: str):
+        """Auto-discover command list file in input folder"""
+        if not os.path.isdir(input_folder):
+            return None
+
+        for filename in os.listdir(input_folder):
+            if filename.lower().endswith('.xlsx'):
+                if 'command' in filename.lower() and 'list' in filename.lower():
+                    return os.path.join(input_folder, filename)
+        return None
+
+    @staticmethod
     def execute(state: SYS5State) -> SYS5State:
         print(f"\n{'='*80}")
         print("NODE 3: LOGICAL SIGNAL EXTRACTION")
@@ -76,6 +88,42 @@ class Node3ExtractLogicalSignals:
 
         except Exception as e:
             error_msg = f"Could not load signals sheet: {str(e)}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        # Find and load Command List file
+        command_list_file = Node3ExtractLogicalSignals._find_command_list_file(abs_input_folder)
+        if not command_list_file:
+            error_msg = f"Command List file not found in: {abs_input_folder}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        print(f"[LOG] Command List file: {command_list_file}\n")
+
+        # Find the correct sheet name, handling whitespace
+        excel_file = pd.ExcelFile(command_list_file)
+        command_sheet = None
+        for sheet in excel_file.sheet_names:
+            if sheet.strip().lower() == "command list":
+                command_sheet = sheet
+                break
+
+        if not command_sheet:
+            error_msg = f"Could not find 'Command List' sheet. Available sheets: {excel_file.sheet_names}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        try:
+            command_list_df = pd.read_excel(command_list_file, sheet_name=command_sheet)
+            print(f"[LOG] Command List loaded from sheet '{command_sheet}': {len(command_list_df)} rows\n")
+        except Exception as e:
+            error_msg = f"Could not load Command List sheet: {str(e)}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
@@ -125,13 +173,27 @@ class Node3ExtractLogicalSignals:
                 # Replace underscores with spaces
                 formatted_name = logical_name.replace('_', ' ')
 
-                logical_signals.append({
-                    "feature_number": feature_num,
-                    "logical_signal_name": logical_name,
-                    "formatted_name": formatted_name
-                })
+                # Search for substring match in Command List
+                cmd_matches = command_list_df[
+                    command_list_df['Signal Name'].astype(str).str.contains(logical_name, na=False, regex=False)
+                ]
 
-                print(f"[LOG] {logical_name} -> {formatted_name}")
+                if len(cmd_matches) > 0:
+                    cmd_row = cmd_matches.iloc[0]
+
+                    # Extract columns C (Command Code) and E (Validation Method)
+                    signal_data = {
+                        "feature_number": feature_num,
+                        "logical_signal_name": logical_name,
+                        "formatted_name": formatted_name,
+                        "command_code": str(cmd_row['Command Code']),
+                        "validation_method": str(cmd_row['Validation Method'])
+                    }
+
+                    logical_signals.append(signal_data)
+                    print(f"[LOG] {logical_name} -> {formatted_name} | C: {signal_data['command_code']}, E: {signal_data['validation_method']}")
+                else:
+                    print(f"[LOG] No match found for '{logical_name}' in Command List")
 
         print(f"\n[LOG] Total logical signals extracted: {len(logical_signals)}\n")
 
