@@ -5,6 +5,7 @@ All configurable parameters for requirement extraction and processing
 """
 
 import os
+import re
 from typing import Optional
 
 # ============================================================================
@@ -90,24 +91,16 @@ def is_functional_requirement(cell_value: str) -> bool:
     if not cell_value:
         return False
 
-    cell_lower = str(cell_value).lower() if not KEYWORD_MATCHING_CONFIG["case_sensitive"] else str(cell_value)
+    cell_str = str(cell_value)
+    cell_lower = cell_str.lower() if not KEYWORD_MATCHING_CONFIG["case_sensitive"] else cell_str
 
     # Check excluded keywords first
     for excluded_kw in EXCLUDED_KEYWORDS:
-        if KEYWORD_MATCHING_CONFIG["case_sensitive"]:
-            excluded_lower = excluded_kw
-        else:
-            excluded_lower = excluded_kw.lower()
+        excluded_lower = excluded_kw if KEYWORD_MATCHING_CONFIG["case_sensitive"] else excluded_kw.lower()
 
-        # Exact match with word boundaries
         if KEYWORD_MATCHING_CONFIG["word_boundaries"]:
-            if f" {excluded_lower} " in f" {cell_lower} ":
-                return False
-            if cell_lower.startswith(excluded_lower + " "):
-                return False
-            if cell_lower.endswith(" " + excluded_lower):
-                return False
-            if cell_lower == excluded_lower:
+            pattern = r'\b' + re.escape(excluded_lower) + r'\b'
+            if re.search(pattern, cell_lower):
                 return False
         else:
             if excluded_lower in cell_lower:
@@ -115,20 +108,11 @@ def is_functional_requirement(cell_value: str) -> bool:
 
     # Check functional requirement keywords
     for func_kw in FUNCTIONAL_REQ_KEYWORDS:
-        if KEYWORD_MATCHING_CONFIG["case_sensitive"]:
-            func_lower = func_kw
-        else:
-            func_lower = func_kw.lower()
+        func_lower = func_kw if KEYWORD_MATCHING_CONFIG["case_sensitive"] else func_kw.lower()
 
-        # Exact match with word boundaries
         if KEYWORD_MATCHING_CONFIG["word_boundaries"]:
-            if f" {func_lower} " in f" {cell_lower} ":
-                return True
-            if cell_lower.startswith(func_lower + " "):
-                return True
-            if cell_lower.endswith(" " + func_lower):
-                return True
-            if cell_lower == func_lower:
+            pattern = r'\b' + re.escape(func_lower) + r'\b'
+            if re.search(pattern, cell_lower):
                 return True
         else:
             if func_lower in cell_lower:
