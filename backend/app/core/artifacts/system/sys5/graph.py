@@ -14,23 +14,23 @@ try:
     from .nodes import (  # type: ignore
         Node1ExtractRequirements, Node2FindSignalsAndCommands,
         Node3ExtractLogicalSignals, Node4ExtractAppParameters,
-        Node5ExtractModelConfig
+        Node5ExtractModelConfig, Node6ExtractCompoundAndLibrary
     )
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.nodes import (
         Node1ExtractRequirements, Node2FindSignalsAndCommands,
         Node3ExtractLogicalSignals, Node4ExtractAppParameters,
-        Node5ExtractModelConfig
+        Node5ExtractModelConfig, Node6ExtractCompoundAndLibrary
     )
 
 
 def build_workflow():
     """
-    Build LangGraph workflow with Nodes 1-5
+    Build LangGraph workflow with Nodes 1-6
 
     Graph structure:
-        START → Node 1 → Node 2 → Node 3 → Node 4 → Node 5 → END
+        START → Node 1 → Node 2 → Node 3 → Node 4 → Node 5 → Node 6 → END
 
     Returns:
         Compiled LangGraph workflow
@@ -43,6 +43,7 @@ def build_workflow():
     workflow.add_node("node_3", Node3ExtractLogicalSignals.execute)
     workflow.add_node("node_4", Node4ExtractAppParameters.execute)
     workflow.add_node("node_5", Node5ExtractModelConfig.execute)
+    workflow.add_node("node_6", Node6ExtractCompoundAndLibrary.execute)
 
     # Define edges
     workflow.add_edge(START, "node_1")
@@ -50,7 +51,8 @@ def build_workflow():
     workflow.add_edge("node_2", "node_3")
     workflow.add_edge("node_3", "node_4")
     workflow.add_edge("node_4", "node_5")
-    workflow.add_edge("node_5", END)
+    workflow.add_edge("node_5", "node_6")
+    workflow.add_edge("node_6", END)
 
     # Compile and return
     return workflow.compile()
