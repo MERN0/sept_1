@@ -173,7 +173,7 @@ class Node1ExtractRequirements:
             }
 
             with open(json_file, 'w') as f:
-                json.dump(output_data, f, indent=2)
+                json.dump(output_data, f, indent=2, default=str)
 
             print(f"[SUCCESS] Requirements saved to: {json_file}")
             print(f"[LOG] File size: {os.path.getsize(json_file)} bytes\n")

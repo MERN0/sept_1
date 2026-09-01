@@ -218,7 +218,7 @@ class Node3ExtractLogicalSignals:
             timestamp = state.get("timestamp", "")
             json_file = os.path.join(abs_output_dir, f"feature_details_{timestamp}.json")
             with open(json_file, 'w') as f:
-                json.dump(feature_details, f, indent=2)
+                json.dump(feature_details, f, indent=2, default=str)
             print(f"[LOG] Feature details saved to: {json_file}\n")
 
         print(f"\n[LOG] Total logical signals extracted: {len(logical_signals)}\n")

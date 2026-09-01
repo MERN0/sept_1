@@ -91,4 +91,4 @@ def run_workflow(config: Dict[str, Any]) -> str:
         print(f"Errors: {result['errors']}")
     print(f"{'='*80}\n")
 
-    return json.dumps(result, indent=2)
+    return json.dumps(result, indent=2, default=str)
