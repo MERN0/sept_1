@@ -384,7 +384,12 @@ class Node2FindSignalsAndCommands:
                     if idx < len(cmd_list_df.columns):
                         col_name = cmd_list_df.columns[idx]
                         value = row.iloc[idx]
-                        cmd_details[col_name] = None if pd.isna(value) else value
+                        if pd.isna(value):
+                            cmd_details[col_name] = None
+                        else:
+                            # Convert numpy/pandas types to Python native types
+                            value_native = value.item() if hasattr(value, 'item') else value
+                            cmd_details[col_name] = str(value_native) if not isinstance(value_native, (int, float, bool)) else value_native
 
                 return cmd_details
 
