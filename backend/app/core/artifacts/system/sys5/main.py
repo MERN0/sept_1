@@ -1,11 +1,22 @@
 """Main orchestrator for SYS5 workflow execution"""
 
 import json
+import os
+import sys
 from typing import Dict, Any
 from datetime import datetime
 
-from .state import SYS5State
-from .graph import build_workflow
+# Setup path for imports
+_workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+if _workspace_root not in sys.path:
+    sys.path.insert(0, _workspace_root)
+
+try:
+    from .state import SYS5State  # type: ignore
+    from .graph import build_workflow  # type: ignore
+except ImportError:
+    from backend.app.core.artifacts.system.sys5.state import SYS5State
+    from backend.app.core.artifacts.system.sys5.graph import build_workflow
 
 
 def run_workflow(config: Dict[str, Any]) -> str:

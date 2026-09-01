@@ -2,11 +2,23 @@
 
 import json
 import os
+import sys
 import pandas as pd
 from typing import Dict, Any
 
-from ..state import SYS5State
-from ..utils import resolve_path, ensure_directory_exists
+# Setup path for imports
+_workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+if _workspace_root not in sys.path:
+    sys.path.insert(0, _workspace_root)
+
+try:
+    from ..state import SYS5State  # type: ignore
+    from ..utils import resolve_path, ensure_directory_exists  # type: ignore
+    from ..config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS  # type: ignore
+except ImportError:
+    from backend.app.core.artifacts.system.sys5.state import SYS5State
+    from backend.app.core.artifacts.system.sys5.utils import resolve_path, ensure_directory_exists
+    from backend.app.core.artifacts.system.sys5.config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS
 
 
 class Node1ExtractRequirements:
@@ -75,20 +87,26 @@ class Node1ExtractRequirements:
             print(f"[LOG] Columns: {list(df.columns)}\n")
 
             # Extract functional requirements
-            print(f"[LOG] Scanning rows for 'Functional requirements' marker...\n")
+            print(f"[LOG] Scanning rows using configured keywords...")
+            print(f"[LOG] Keywords: {FUNCTIONAL_REQ_KEYWORDS}")
+            print(f"[LOG] Matching: case_sensitive={KEYWORD_MATCHING_CONFIG['case_sensitive']}, "
+                  f"exact_match={KEYWORD_MATCHING_CONFIG['exact_match']}, "
+                  f"word_boundaries={KEYWORD_MATCHING_CONFIG['word_boundaries']}\n")
 
             for idx, row in df.iterrows():
                 is_functional = False
+                matched_column = None
 
                 # Check each cell in row
                 for col_name, cell_value in row.items():
                     if pd.isna(cell_value):
                         continue
 
-                    # Case-insensitive match for "functional requirements"
-                    if "functional requirements" in str(cell_value).lower():
+                    # Use config-based matching
+                    if is_functional_requirement(str(cell_value)):
                         is_functional = True
-                        print(f"[LOG] Row {idx}: MATCH in column '{col_name}'")
+                        matched_column = col_name
+                        print(f"[LOG] Row {idx}: MATCH in column '{col_name}' = '{cell_value}'")
                         break
 
                 # Extract matching row
