@@ -304,10 +304,11 @@ class Node2FindSignalsAndCommands:
                 return signal_names
 
             # Find rows marked with a valid marker character in the feature column
+            # Valid markers: "x"/"X" and 〇 (IDEOGRAPHIC NUMBER ZERO, "○")
             marked_rows = comm_matrix_df[comm_matrix_df[feature_col].notna()]
             marked_rows = marked_rows[
                 marked_rows[feature_col].astype(str).str.contains(
-                    r'[✕⊕x✓X]', na=False, regex=True
+                    r'[xX〇]', na=False, regex=True
                 )
             ]
 
