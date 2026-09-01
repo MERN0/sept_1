@@ -1,5 +1,6 @@
 """Node 2: Signal and Command Extraction from Communication Matrices"""
 
+import json
 import os
 import sys
 import re
@@ -11,10 +12,10 @@ if _workspace_root not in sys.path:
 
 try:
     from ..state import SYS5State
-    from ..utils import resolve_path
+    from ..utils import resolve_path, ensure_directory_exists, update_feature_details_memory
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
-    from backend.app.core.artifacts.system.sys5.utils import resolve_path
+    from backend.app.core.artifacts.system.sys5.utils import resolve_path, ensure_directory_exists, update_feature_details_memory
 
 IDEOGRAPHIC_ZERO = "〇"  # 〇
 
@@ -108,7 +109,7 @@ class Node2FindSignalsAndCommands:
             state["errors"] = errors
             return state
 
-        signals = []
+        feature_details = dict(state.get("feature_details") or {})
 
         # Feature/sheet numbers to look up, derived from requirement IDs
         feature_nums = []
@@ -176,14 +177,27 @@ class Node2FindSignalsAndCommands:
                         signal_data["req_id"] = req_id
                         break
 
-                signals.append(signal_data)
+                feature_details[signal_name] = signal_data
                 print(f"[LOG] Extracted: {signal_name} -> {signal_data['command_name']}, {signal_data['signal_description']}")
 
-        state["signals"] = signals
-        state["feature_details"] = {}
+        # Update in-memory store (persists across process, independent of state)
+        update_feature_details_memory(feature_details)
+
+        # Write feature_details to JSON, in addition to the in-memory store
+        output_dir = config.get("output_dir")
+        abs_output_dir = resolve_path(output_dir) if output_dir else None
+        if abs_output_dir:
+            ensure_directory_exists(abs_output_dir)
+            timestamp = state.get("timestamp", "")
+            json_file = os.path.join(abs_output_dir, f"feature_details_{timestamp}.json")
+            with open(json_file, 'w') as f:
+                json.dump(feature_details, f, indent=2)
+            print(f"[LOG] Feature details saved to: {json_file}\n")
+
+        state["feature_details"] = feature_details
         state["errors"] = errors
 
-        print(f"\n[LOG] Total signals extracted: {len(signals)}\n")
+        print(f"\n[LOG] Total feature details extracted: {len(feature_details)}\n")
         print(f"{'='*80}")
         print("NODE 2 COMPLETED")
         print(f"{'='*80}\n")

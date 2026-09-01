@@ -41,8 +41,8 @@ def run_workflow(config: Dict[str, Any]) -> str:
     initial_state: SYS5State = {
         "config": config,
         "requirements": [],
-        "signals": [],
         "feature_details": {},
+        "logical_signals": [],
         "errors": [],
         "timestamp": timestamp
     }
@@ -64,10 +64,10 @@ def run_workflow(config: Dict[str, Any]) -> str:
     result = {
         "status": "success" if not final_state["errors"] else "failed",
         "total_requirements": len(final_state["requirements"]),
-        "total_signals": len(final_state["signals"]),
+        "total_logical_signals": len(final_state["logical_signals"]),
         "total_features": len(final_state["feature_details"]),
         "requirements": final_state["requirements"],
-        "signals": final_state["signals"],
+        "logical_signals": final_state["logical_signals"],
         "feature_details": final_state["feature_details"],
         "errors": final_state["errors"],
         "timestamp": timestamp
@@ -79,7 +79,7 @@ def run_workflow(config: Dict[str, Any]) -> str:
     print(f"{'='*80}")
     print(f"Status: {result['status'].upper()}")
     print(f"Total Requirements: {result['total_requirements']}")
-    print(f"Total Signals: {result['total_signals']}")
+    print(f"Total Logical Signals: {result['total_logical_signals']}")
     print(f"Total Features: {result['total_features']}")
     if result["errors"]:
         print(f"Errors: {result['errors']}")

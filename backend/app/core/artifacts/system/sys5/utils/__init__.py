@@ -7,6 +7,11 @@ from .test_pattern_generator import (
     parse_test_patterns_json,
     format_test_patterns_for_excel
 )
+from .memory_store import (
+    FEATURE_DETAILS_MEMORY,
+    update_feature_details_memory,
+    get_feature_details_memory
+)
 
 __all__ = [
     'resolve_path',
@@ -14,5 +19,8 @@ __all__ = [
     'extract_verification_criteria',
     'prepare_test_pattern_prompt',
     'parse_test_patterns_json',
-    'format_test_patterns_for_excel'
+    'format_test_patterns_for_excel',
+    'FEATURE_DETAILS_MEMORY',
+    'update_feature_details_memory',
+    'get_feature_details_memory'
 ]

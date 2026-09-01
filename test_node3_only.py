@@ -54,7 +54,6 @@ state: SYS5State = {
     "config": config,
     "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
     "requirements": mock_requirements,
-    "signals": [],
     "logical_signals": [],
     "feature_details": {},
     "errors": []
