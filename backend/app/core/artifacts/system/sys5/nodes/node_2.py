@@ -143,34 +143,34 @@ class Node2FindSignalsAndCommands:
                 else:
                     print(f"      → Feature details not found in Index sheet\n")
 
-                # Find related signals in Master Comm Matrix
-                related_signals = Node2FindSignalsAndCommands._find_related_signals(
+                # Find Signal Name values for valid rows marked under the feature column
+                signal_names = Node2FindSignalsAndCommands._find_related_signals(
                     feature_num, comm_matrix_df
                 )
 
-                if related_signals:
-                    print(f"      → Found {len(related_signals)} related signals")
+                if signal_names:
+                    print(f"      → Found {len(signal_names)} valid signal names")
 
-                    # For each signal, find related commands
-                    for signal in related_signals:
-                        message_name = signal.get("Message Name")
+                    for signal_name in signal_names:
+                        if not signal_name:
+                            continue
 
-                        if message_name and cmd_list_df is not None:
-                            # Search for command details
+                        cmd_details = None
+                        if cmd_list_df is not None:
                             cmd_details = Node2FindSignalsAndCommands._find_command_details(
-                                message_name, cmd_list_df
+                                signal_name, cmd_list_df
                             )
 
-                            if cmd_details:
-                                signal["feature_details"] = cmd_details
-                                print(f"         → {message_name}: Found command details\n")
-                            else:
-                                print(f"         → {message_name}: No command details found\n")
+                        if cmd_details:
+                            print(f"         → {signal_name}: Found command details\n")
+                        else:
+                            print(f"         → {signal_name}: No command details found\n")
 
                         signals_data.append({
                             "req_id": req_id,
                             "feature_number": feature_num,
-                            "signal": signal
+                            "signal_name": signal_name,
+                            "feature_details": cmd_details
                         })
 
             # Save signals and feature details to JSON
@@ -256,27 +256,28 @@ class Node2FindSignalsAndCommands:
         return None
 
     @staticmethod
-    def _find_related_signals(feature_num: str, comm_matrix_df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    def _find_related_signals(feature_num: str, comm_matrix_df: Optional[pd.DataFrame]) -> List[str]:
         """
-        Find signals in Master Comm Matrix marked with the feature number
+        Find Signal Name values in Master Comm Matrix for rows marked valid
+        under the feature column (column header == feature number / sheet name)
 
-        Looks for columns with feature numbers (001-083) and extracts rows
-        where the feature column is marked with ✕ or ⊕ or other markers
+        A row is valid when the feature column cell contains a marker
+        character (e.g. u+2717 ✕, u+2295 ⊕, or plain x/✓)
 
         Args:
-            feature_num: Feature number (e.g., "019")
+            feature_num: Feature number (e.g., "019"), matches the column header
             comm_matrix_df: Master Comm Matrix DataFrame
 
         Returns:
-            List of signal dictionaries
+            List of Signal Name values from valid rows
         """
         if comm_matrix_df is None:
             return []
 
-        signals = []
+        signal_names = []
 
         try:
-            # Look for feature column
+            # Look for feature column (header matches the requirement sheet name)
             feature_col = None
             for col in comm_matrix_df.columns:
                 if str(col).strip() == feature_num:
@@ -284,53 +285,58 @@ class Node2FindSignalsAndCommands:
                     break
 
             if feature_col is None:
-                return signals
+                return signal_names
 
-            # Find rows marked in this feature column
+            # Look for "Signal name" column (case-insensitive, exact match preferred)
+            signal_name_col = None
+            for col in comm_matrix_df.columns:
+                if str(col).strip().lower() == "signal name":
+                    signal_name_col = col
+                    break
+
+            if signal_name_col is None:
+                for col in comm_matrix_df.columns:
+                    if "signal name" in str(col).strip().lower():
+                        signal_name_col = col
+                        break
+
+            if signal_name_col is None:
+                return signal_names
+
+            # Find rows marked with a valid marker character in the feature column
             marked_rows = comm_matrix_df[comm_matrix_df[feature_col].notna()]
             marked_rows = marked_rows[
                 marked_rows[feature_col].astype(str).str.contains(
-                    r'[✕⊕x✓]', na=False, regex=True
+                    r'[✕⊕x✓X]', na=False, regex=True
                 )
             ]
 
-            # Extract signal details from marked rows
             for idx, row in marked_rows.iterrows():
-                signal_dict = {
-                    "Signal ID": row.get("Signal ID") if "Signal ID" in row.index else None,
-                    "Message Name": row.get("Message Name") if "Message Name" in row.index else None,
-                    "Message IDs": row.get("Message IDs") if "Message IDs" in row.index else None,
-                    "Logical Signal Name": row.get("Logical Signal Name") if "Logical Signal Name" in row.index else None,
-                    "Signal name": row.get("Signal name") if "Signal name" in row.index else None,
-                    "Signal Description": row.get("Signal Description") if "Signal Description" in row.index else None,
-                    "Physical Range": row.get("Physical Range") if "Physical Range" in row.index else None,
-                    "Unit": row.get("Unit") if "Unit" in row.index else None,
-                    "ECU HW (Transmitting)": row.get("ECU HW (Transmitting)") if "ECU HW (Transmitting)" in row.index else None,
-                    "ECU HW (Receiving)": row.get("ECU HW (Receiving)") if "ECU HW (Receiving)" in row.index else None
-                }
-                signals.append(signal_dict)
+                signal_name = row.get(signal_name_col)
+                if pd.notna(signal_name):
+                    signal_names.append(str(signal_name).strip())
 
-        except Exception as e:
+        except Exception:
             pass
 
-        return signals
+        return signal_names
 
     @staticmethod
-    def _find_command_details(message_name: str, cmd_list_df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    def _find_command_details(signal_name: str, cmd_list_df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """
         Find command details from Command List sheet (columns B to I)
 
         Args:
-            message_name: Message name to search for
+            signal_name: Signal name to search for in Command List
             cmd_list_df: Command List DataFrame
 
         Returns:
             Dictionary with command details from columns B to I, or None
         """
         try:
-            # Search for matching message name
+            # Search for matching signal name in column A
             matching_rows = cmd_list_df[
-                cmd_list_df.iloc[:, 0].astype(str).str.contains(message_name, case=False, na=False)
+                cmd_list_df.iloc[:, 0].astype(str).str.contains(re.escape(signal_name), case=False, na=False)
             ]
 
             if len(matching_rows) > 0:
@@ -338,16 +344,15 @@ class Node2FindSignalsAndCommands:
 
                 # Extract columns B to I (indices 1 to 8)
                 cmd_details = {}
-                col_names = ["Column B", "Column C", "Column D", "Column E", "Column F", "Column G", "Column H", "Column I"]
-
-                for idx, col_name in enumerate(col_names):
-                    if idx + 1 < len(row):
-                        actual_col_name = cmd_list_df.columns[idx + 1] if idx + 1 < len(cmd_list_df.columns) else col_name
-                        cmd_details[actual_col_name] = row.iloc[idx + 1]
+                for idx in range(1, 9):
+                    if idx < len(cmd_list_df.columns):
+                        col_name = cmd_list_df.columns[idx]
+                        value = row.iloc[idx]
+                        cmd_details[col_name] = None if pd.isna(value) else value
 
                 return cmd_details
 
-        except Exception as e:
+        except Exception:
             pass
 
         return None
