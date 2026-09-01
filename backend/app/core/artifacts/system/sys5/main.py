@@ -14,9 +14,13 @@ if _workspace_root not in sys.path:
 try:
     from .state import SYS5State  # type: ignore
     from .graph import build_workflow  # type: ignore
+    from .utils import resolve_path, ensure_directory_exists, write_test_cases_workbook  # type: ignore
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.graph import build_workflow
+    from backend.app.core.artifacts.system.sys5.utils import (
+        resolve_path, ensure_directory_exists, write_test_cases_workbook
+    )
 
 
 def run_workflow(config: Dict[str, Any]) -> str:
@@ -31,6 +35,9 @@ def run_workflow(config: Dict[str, Any]) -> str:
             - req_filename: Excel filename
             - req_sheet_name: Sheet name in Excel
             - version: Optional version number
+            - max_corrections: How many Validate -> Correct passes a test
+              case may go through before Node 9 stops looping back to
+              Node 8 (default 1)
 
     Returns:
         JSON string with workflow results
@@ -45,6 +52,7 @@ def run_workflow(config: Dict[str, Any]) -> str:
         "feature_details": {},
         "logical_signals": [],
         "model_config": {},
+        "test_cases": {},
         "errors": [],
         "timestamp": timestamp
     }
@@ -73,9 +81,30 @@ def run_workflow(config: Dict[str, Any]) -> str:
         "logical_signals": final_state["logical_signals"],
         "feature_details": final_state["feature_details"],
         "model_config": final_state["model_config"],
+        "test_cases": final_state["test_cases"],
         "errors": final_state["errors"],
         "timestamp": timestamp
     }
+
+    # Write the Test Cases workbook (Item_List + Test Cases sheets)
+    output_dir = config.get("output_dir")
+    abs_output_dir = resolve_path(output_dir) if output_dir else None
+    if abs_output_dir and final_state["test_cases"]:
+        ensure_directory_exists(abs_output_dir)
+        test_case_rows = []
+        requirements_by_id = {req.get("req_id"): req for req in final_state["requirements"]}
+        for req_id, entry in final_state["test_cases"].items():
+            requirement = requirements_by_id.get(req_id, {})
+            test_case_rows.append({
+                "test_case_id": req_id,
+                "requirement_id": req_id,
+                "description": requirement.get("data", {}).get("Description", ""),
+                "steps": (entry.get("generated_output") or {}).get("steps", []),
+            })
+
+        excel_path = os.path.join(abs_output_dir, f"test_cases_{timestamp}.xlsx")
+        write_test_cases_workbook(excel_path, test_case_rows)
+        print(f"[LOG] Test Cases workbook saved to: {excel_path}\n")
 
     # Print workflow summary
     print(f"{'='*80}")
@@ -87,6 +116,7 @@ def run_workflow(config: Dict[str, Any]) -> str:
     print(f"Total Features: {result['total_features']}")
     print(f"Model Input Mapping (matched): {len(result['model_config'].get('model_input_mapping', {}))}")
     print(f"Tolerances (matched): {len(result['model_config'].get('tolerances', {}))}")
+    print(f"Test Cases tracked: {len(result['test_cases'])}")
     if result["errors"]:
         print(f"Errors: {result['errors']}")
     print(f"{'='*80}\n")

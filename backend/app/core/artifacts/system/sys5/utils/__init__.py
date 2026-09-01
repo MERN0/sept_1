@@ -12,6 +12,8 @@ from .memory_store import (
     update_feature_details_memory,
     get_feature_details_memory
 )
+from .data_cleaning import drop_empty_values
+from .test_case_excel_writer import write_test_cases_workbook
 
 __all__ = [
     'resolve_path',
@@ -22,5 +24,7 @@ __all__ = [
     'format_test_patterns_for_excel',
     'FEATURE_DETAILS_MEMORY',
     'update_feature_details_memory',
-    'get_feature_details_memory'
+    'get_feature_details_memory',
+    'drop_empty_values',
+    'write_test_cases_workbook'
 ]
