@@ -1,12 +1,24 @@
 """
 Test Pattern Generator - Creates test cases from requirements and verification criteria
 
-Uses LLM to generate test patterns based on requirement descriptions and verification criteria
+Uses LLM (via LangChain) to generate test patterns based on requirement descriptions
 """
 
 import json
 import re
+import os
+import sys
 from typing import Dict, Any, List, Optional
+
+# Setup path for imports
+_workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+if _workspace_root not in sys.path:
+    sys.path.insert(0, _workspace_root)
+
+try:
+    from ..config import get_llm  # type: ignore
+except ImportError:
+    from backend.app.core.artifacts.system.sys5.config import get_llm
 
 
 def extract_verification_criteria(row_data: Dict[str, Any]) -> Optional[str]:

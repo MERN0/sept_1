@@ -4,6 +4,9 @@ Configuration settings for SYS5 workflow
 All configurable parameters for requirement extraction and processing
 """
 
+import os
+from typing import Optional
+
 # ============================================================================
 # REQUIREMENT KEYWORDS AND MATCHING RULES
 # ============================================================================
@@ -41,6 +44,18 @@ LOGGING_CONFIG = {
     "verbose": True,                # Print detailed logs
     "log_matched_rows": True,       # Print details of matched rows
     "log_skipped_rows": False,      # Print details of skipped rows
+}
+
+# ============================================================================
+# LLM CONFIGURATION
+# ============================================================================
+
+LLM_CONFIG = {
+    "model": "gpt-4",                           # Model name (e.g., gpt-4, gpt-3.5-turbo)
+    "openai_api_key": None,                     # API key (set via environment or override)
+    "openai_api_base": "https://api.openai.com/v1",  # API base URL
+    "temperature": 0.7,                         # Temperature for generation
+    "max_tokens": 2000,                         # Maximum tokens in response
 }
 
 # ============================================================================
@@ -120,3 +135,52 @@ def is_functional_requirement(cell_value: str) -> bool:
                 return True
 
     return False
+
+
+# ============================================================================
+# LLM INITIALIZATION
+# ============================================================================
+
+def get_llm():
+    """
+    Initialize and return ChatOpenAI LLM instance
+
+    Configuration is read from LLM_CONFIG dict and environment variables:
+    - OPENAI_API_KEY: Overrides LLM_CONFIG["openai_api_key"]
+    - OPENAI_API_BASE: Overrides LLM_CONFIG["openai_api_base"]
+
+    Returns:
+        ChatOpenAI instance configured with settings
+
+    Raises:
+        ImportError: If langchain_openai is not installed
+        ValueError: If API key is not configured
+    """
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        raise ImportError(
+            "langchain-openai is required. Install with: pip install langchain-openai"
+        )
+
+    # Get API key from environment or config
+    api_key = os.getenv("OPENAI_API_KEY") or LLM_CONFIG.get("openai_api_key")
+
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY not set. Set via environment variable or LLM_CONFIG['openai_api_key']"
+        )
+
+    # Get API base URL from environment or config
+    api_base = os.getenv("OPENAI_API_BASE") or LLM_CONFIG.get("openai_api_base")
+
+    # Initialize and return ChatOpenAI
+    llm = ChatOpenAI(
+        model=LLM_CONFIG.get("model", "gpt-4"),
+        openai_api_key=api_key,
+        openai_api_base=api_base,
+        temperature=LLM_CONFIG.get("temperature", 0.7),
+        max_tokens=LLM_CONFIG.get("max_tokens", 2000),
+    )
+
+    return llm

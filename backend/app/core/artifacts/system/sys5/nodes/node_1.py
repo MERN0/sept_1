@@ -17,14 +17,16 @@ try:
     from ..state import SYS5State  # type: ignore
     from ..utils import (resolve_path, ensure_directory_exists, extract_verification_criteria,  # type: ignore
                          prepare_test_pattern_prompt, parse_test_patterns_json, format_test_patterns_for_excel)
-    from ..config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS  # type: ignore
+    from ..config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS, get_llm  # type: ignore
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.utils import (
         resolve_path, ensure_directory_exists, extract_verification_criteria,
         prepare_test_pattern_prompt, parse_test_patterns_json, format_test_patterns_for_excel
     )
-    from backend.app.core.artifacts.system.sys5.config import is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS
+    from backend.app.core.artifacts.system.sys5.config import (
+        is_functional_requirement, KEYWORD_MATCHING_CONFIG, FUNCTIONAL_REQ_KEYWORDS, get_llm
+    )
 
 
 class Node1ExtractRequirements:
@@ -199,22 +201,15 @@ class Node1ExtractRequirements:
                         # Prepare prompt for LLM
                         prompt = prepare_test_pattern_prompt(req_desc, criteria, reference_format)
 
-                        # Call Claude API for test pattern generation
-                        from anthropic import Anthropic
-                        client = Anthropic()
-                        response = client.messages.create(
-                            model="claude-3-5-sonnet-20241022",
-                            max_tokens=2000,
-                            messages=[
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ]
-                        )
+                        # Call LLM for test pattern generation using configured model
+                        llm = get_llm()
+                        print(f"[LOG] Calling LLM: {llm.model_name}...")
 
-                        # Parse response
-                        test_pattern_json = response.content[0].text
+                        # Invoke LLM with the prompt
+                        response = llm.invoke(prompt)
+
+                        # Parse response - LangChain returns content directly
+                        test_pattern_json = response.content
                         test_patterns = parse_test_patterns_json(test_pattern_json)
                         test_patterns_data[req_id] = test_patterns
 
