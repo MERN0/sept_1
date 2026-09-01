@@ -85,6 +85,19 @@ class Node2FindSignalsAndCommands:
         print(f"[LOG] Output directory: {abs_output_dir}\n")
 
         try:
+            # Get available sheets for better error messages
+            available_sheets = []
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(abs_sys_req_path)
+                available_sheets = wb.sheetnames
+                print(f"[LOG] Available sheets in {abs_sys_req_path}:")
+                for sheet in available_sheets:
+                    print(f"      - {repr(sheet)}")
+                print()
+            except Exception as e:
+                print(f"[WARNING] Could not read sheet names: {str(e)}\n")
+
             # Load Index sheet to map feature numbers to names and groups
             print(f"[LOG] Loading Index sheet from System Requirements file...")
             try:
@@ -92,6 +105,9 @@ class Node2FindSignalsAndCommands:
                 print(f"[LOG] Index sheet loaded: {len(index_df)} rows\n")
             except Exception as e:
                 print(f"[WARNING] Could not load Index sheet: {str(e)}")
+                if available_sheets:
+                    print(f"[LOG] Available sheets: {available_sheets}")
+                print()
                 index_df = None
 
             # Load Master Comm Matrix
@@ -100,7 +116,10 @@ class Node2FindSignalsAndCommands:
                 comm_matrix_df = pd.read_excel(abs_sys_req_path, sheet_name="Master Comm Matrix (CAN)")
                 print(f"[LOG] Master Comm Matrix loaded: {len(comm_matrix_df)} rows, {len(comm_matrix_df.columns)} columns\n")
             except Exception as e:
-                print(f"[WARNING] Could not load Master Comm Matrix: {str(e)}")
+                print(f"[WARNING] Could not load Master Comm Matrix (CAN): {str(e)}")
+                if available_sheets:
+                    print(f"[LOG] Available sheets: {available_sheets}")
+                print()
                 comm_matrix_df = None
 
             # Load Command List from separate file
@@ -272,6 +291,7 @@ class Node2FindSignalsAndCommands:
             List of Signal Name values from valid rows
         """
         if comm_matrix_df is None:
+            print(f"[WARNING] Master Comm Matrix DataFrame is None, cannot find signals")
             return []
 
         signal_names = []
@@ -285,7 +305,12 @@ class Node2FindSignalsAndCommands:
                     break
 
             if feature_col is None:
+                print(f"[WARNING] Feature column '{feature_num}' not found. Available columns:")
+                for idx, col in enumerate(comm_matrix_df.columns):
+                    print(f"        [{idx:2d}] {repr(str(col).strip())}")
                 return signal_names
+
+            print(f"[DEBUG] Found feature column: {repr(feature_col)}")
 
             # Look for "Signal name" column (case-insensitive, exact match preferred)
             signal_name_col = None
@@ -301,24 +326,34 @@ class Node2FindSignalsAndCommands:
                         break
 
             if signal_name_col is None:
+                print(f"[WARNING] Signal Name column not found. Available columns:")
+                for idx, col in enumerate(comm_matrix_df.columns):
+                    print(f"        [{idx:2d}] {repr(str(col).strip())}")
                 return signal_names
+
+            print(f"[DEBUG] Found signal name column: {repr(signal_name_col)}")
 
             # Find rows marked with a valid marker character in the feature column
             # Valid markers: "x"/"X" and 〇 (IDEOGRAPHIC NUMBER ZERO, "○")
             marked_rows = comm_matrix_df[comm_matrix_df[feature_col].notna()]
+            print(f"[DEBUG] Rows with non-null values in feature column: {len(marked_rows)}")
+
             marked_rows = marked_rows[
                 marked_rows[feature_col].astype(str).str.contains(
                     r'[xX〇]', na=False, regex=True
                 )
             ]
+            print(f"[DEBUG] Rows matching marker pattern [xX〇]: {len(marked_rows)}")
 
             for idx, row in marked_rows.iterrows():
                 signal_name = row.get(signal_name_col)
                 if pd.notna(signal_name):
                     signal_names.append(str(signal_name).strip())
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ERROR] Exception in _find_related_signals: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
         return signal_names
 
