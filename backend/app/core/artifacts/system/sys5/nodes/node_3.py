@@ -173,21 +173,28 @@ class Node3ExtractLogicalSignals:
                 # Replace underscores with spaces
                 formatted_name = logical_name.replace('_', ' ')
 
-                # Search for substring match in Command List
-                cmd_matches = command_list_df[
-                    command_list_df['Signal Name'].astype(str).str.contains(logical_name, na=False, regex=False)
-                ]
+                # Search for substring match in Command List row-by-row
+                matched_row = None
+                for cmd_idx, cmd_row in command_list_df.iterrows():
+                    # Check if logical_name exists as substring in any cell of this row
+                    row_found = False
+                    for col_val in cmd_row.values:
+                        if logical_name in str(col_val):
+                            row_found = True
+                            break
 
-                if len(cmd_matches) > 0:
-                    cmd_row = cmd_matches.iloc[0]
+                    if row_found:
+                        matched_row = cmd_row
+                        break
 
+                if matched_row is not None:
                     # Extract columns C (Command Code) and E (Validation Method)
                     signal_data = {
                         "feature_number": feature_num,
                         "logical_signal_name": logical_name,
                         "formatted_name": formatted_name,
-                        "command_code": str(cmd_row['Command Code']),
-                        "validation_method": str(cmd_row['Validation Method'])
+                        "command_code": str(matched_row['Command Code']),
+                        "validation_method": str(matched_row['Validation Method'])
                     }
 
                     logical_signals.append(signal_data)
