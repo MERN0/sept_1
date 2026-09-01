@@ -19,9 +19,12 @@ except ImportError:
 
 class Node6ExtractCompoundAndLibrary:
     """
-    Node 6: Extract Compound Commands and Library List sheets from the
-    configuration file, and merge the results into state["model_config"]
-    alongside the model_input_mapping/tolerances data from Node 5.
+    Node 6: Extract Compound Commands and Library List, each from its own
+    dedicated file in the input folder (not the configuration file used by
+    Node 5) - e.g. TE_TMHC_Compound_Commands.xlsx and
+    TE_TMHC_HILS_..._Keyword_Library_Description_Sheet.xlsx - and merge the
+    results into state["model_config"] alongside the model_input_mapping/
+    tolerances data from Node 5.
 
     Both sheets get a two-stage filter:
     1. Row-wide keyword pre-filter ("compound" / "lib" substring anywhere in
@@ -35,13 +38,16 @@ class Node6ExtractCompoundAndLibrary:
     """
 
     @staticmethod
-    def _find_config_file(input_folder: str):
-        """Auto-discover configuration file in input folder"""
+    def _find_file_by_keywords(input_folder: str, required_words):
+        """Auto-discover an .xlsx file whose name contains all required_words"""
         if not os.path.isdir(input_folder):
             return None
 
         for filename in os.listdir(input_folder):
-            if filename.lower().endswith('.xlsx') and 'config' in filename.lower():
+            if not filename.lower().endswith('.xlsx'):
+                continue
+            normalized = filename.lower().replace('_', ' ').replace('-', ' ')
+            if all(word in normalized for word in required_words):
                 return os.path.join(input_folder, filename)
         return None
 
@@ -53,6 +59,19 @@ class Node6ExtractCompoundAndLibrary:
             if all(word in normalized for word in required_words):
                 return sheet
         return None
+
+    @staticmethod
+    def _resolve_sheet(file_path, keyword_words):
+        """
+        Pick the sheet to read from a dedicated file: prefer one matching
+        keyword_words, otherwise fall back to the file's first sheet (most
+        of these files carry the data on a single sheet).
+        """
+        excel_file = pd.ExcelFile(file_path)
+        sheet = Node6ExtractCompoundAndLibrary._find_sheet(excel_file, keyword_words)
+        if sheet is None:
+            sheet = excel_file.sheet_names[0]
+        return sheet, excel_file.sheet_names
 
     @staticmethod
     def _collect_known_first_tokens(feature_details):
@@ -136,72 +155,78 @@ class Node6ExtractCompoundAndLibrary:
             state["errors"] = errors
             return state
 
-        config_file = Node6ExtractCompoundAndLibrary._find_config_file(abs_input_folder)
-        if not config_file:
-            error_msg = f"Configuration file not found in: {abs_input_folder}"
-            print(f"[ERROR] {error_msg}\n")
-            errors.append(error_msg)
-            state["errors"] = errors
-            return state
-
-        print(f"[LOG] Configuration file: {config_file}\n")
-
-        try:
-            excel_file = pd.ExcelFile(config_file)
-            print(f"[LOG] Available sheets: {excel_file.sheet_names}\n")
-        except Exception as e:
-            error_msg = f"Could not open configuration file: {str(e)}"
-            print(f"[ERROR] {error_msg}\n")
-            errors.append(error_msg)
-            state["errors"] = errors
-            return state
-
-        compound_sheet = Node6ExtractCompoundAndLibrary._find_sheet(excel_file, ["compound"])
-        library_sheet = Node6ExtractCompoundAndLibrary._find_sheet(excel_file, ["librar"])
-
-        if not compound_sheet or not library_sheet:
-            error_msg = (
-                f"Could not find required sheets. Compound Commands found: {compound_sheet}, "
-                f"Library List found: {library_sheet}. Available: {excel_file.sheet_names}"
-            )
-            print(f"[ERROR] {error_msg}\n")
-            errors.append(error_msg)
-            state["errors"] = errors
-            return state
-
         first_tokens = Node6ExtractCompoundAndLibrary._collect_known_first_tokens(feature_details)
         print(f"[DEBUG] Known signal first-tokens ({len(first_tokens)}): {list(first_tokens)[:10]}\n")
 
-        # --- Compound Commands ---
+        # --- Compound Commands: dedicated file, e.g. TE_TMHC_Compound_Commands.xlsx ---
+        compound_file = Node6ExtractCompoundAndLibrary._find_file_by_keywords(
+            abs_input_folder, ["compound", "command"]
+        )
+        if not compound_file:
+            error_msg = f"Compound Commands file not found in: {abs_input_folder}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        print(f"[LOG] Compound Commands file: {compound_file}\n")
+
         try:
-            compound_df = pd.read_excel(config_file, sheet_name=compound_sheet)
-            print(f"[LOG] Compound Commands loaded: {compound_sheet}, {len(compound_df)} rows\n")
+            compound_sheet, compound_sheets = Node6ExtractCompoundAndLibrary._resolve_sheet(
+                compound_file, ["compound"]
+            )
+            print(f"[LOG] Compound Commands sheets available: {compound_sheets}, using: {compound_sheet}\n")
+            compound_df = pd.read_excel(compound_file, sheet_name=compound_sheet)
+            print(f"[LOG] Compound Commands loaded: {len(compound_df)} rows\n")
         except Exception as e:
-            error_msg = f"Could not load Compound Commands sheet: {str(e)}"
+            error_msg = f"Could not load Compound Commands file: {str(e)}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
             return state
 
         compound_commands, compound_pre, compound_final = Node6ExtractCompoundAndLibrary._extract_sheet(
-            compound_df, compound_sheet, "compound", first_tokens
+            compound_df, "compound_commands", "compound", first_tokens
         )
         print(f"[LOG] Compound Commands: {len(compound_df)} rows -> {compound_pre} contain 'compound' "
               f"(deduped) -> {compound_final} matched signal/initial/default\n")
 
-        # --- Library List ---
+        # --- Library List: dedicated file, e.g.
+        # TE_TMHC_HILS_..._Keyword_Library_Description_Sheet.xlsx ---
+        library_file = Node6ExtractCompoundAndLibrary._find_file_by_keywords(
+            abs_input_folder, ["keyword", "library"]
+        )
+        if not library_file:
+            # Fall back to just "library" in case the exact naming varies
+            library_file = Node6ExtractCompoundAndLibrary._find_file_by_keywords(
+                abs_input_folder, ["library"]
+            )
+
+        if not library_file:
+            error_msg = f"Library List file not found in: {abs_input_folder}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
+        print(f"[LOG] Library List file: {library_file}\n")
+
         try:
-            library_df = pd.read_excel(config_file, sheet_name=library_sheet)
-            print(f"[LOG] Library List loaded: {library_sheet}, {len(library_df)} rows\n")
+            library_sheet, library_sheets = Node6ExtractCompoundAndLibrary._resolve_sheet(
+                library_file, ["librar"]
+            )
+            print(f"[LOG] Library List sheets available: {library_sheets}, using: {library_sheet}\n")
+            library_df = pd.read_excel(library_file, sheet_name=library_sheet)
+            print(f"[LOG] Library List loaded: {len(library_df)} rows\n")
         except Exception as e:
-            error_msg = f"Could not load Library List sheet: {str(e)}"
+            error_msg = f"Could not load Library List file: {str(e)}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
             return state
 
         library_list, library_pre, library_final = Node6ExtractCompoundAndLibrary._extract_sheet(
-            library_df, library_sheet, "lib", first_tokens
+            library_df, "library_list", "lib", first_tokens
         )
         print(f"[LOG] Library List: {len(library_df)} rows -> {library_pre} contain 'lib' "
               f"(deduped) -> {library_final} matched signal/initial/default\n")
