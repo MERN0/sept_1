@@ -83,17 +83,26 @@ class Node2FindSignalsAndCommands:
 
         print(f"[LOG] Command List file: {command_list_file}\n")
 
+        # Find the correct sheet name, handling whitespace
+        excel_file = pd.ExcelFile(command_list_file)
+        command_sheet = None
+        for sheet in excel_file.sheet_names:
+            if sheet.strip().lower() == "command list":
+                command_sheet = sheet
+                break
+
+        if not command_sheet:
+            error_msg = f"Could not find 'Command List' sheet. Available sheets: {excel_file.sheet_names}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
         try:
-            command_list_df = pd.read_excel(command_list_file, sheet_name="Command List")
-            print(f"[LOG] Command List loaded: {len(command_list_df)} rows\n")
+            command_list_df = pd.read_excel(command_list_file, sheet_name=command_sheet)
+            print(f"[LOG] Command List loaded from sheet '{command_sheet}': {len(command_list_df)} rows\n")
         except Exception as e:
-            # Try to show available sheets for debugging
-            try:
-                excel_file = pd.ExcelFile(command_list_file)
-                available_sheets = excel_file.sheet_names
-                error_msg = f"Could not load 'Command List' sheet. Available sheets: {available_sheets}"
-            except:
-                error_msg = f"Could not load Command List: {str(e)}"
+            error_msg = f"Could not load Command List sheet: {str(e)}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
