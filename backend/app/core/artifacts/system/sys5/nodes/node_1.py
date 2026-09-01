@@ -59,6 +59,7 @@ class Node1ExtractRequirements:
         config = state["config"]
         requirements = []
         errors = []
+        test_patterns_data = {}
 
         # Extract configuration
         input_folder = config.get("input_folder_path")
@@ -199,7 +200,6 @@ class Node1ExtractRequirements:
   ]
 }"""
 
-            test_patterns_data = {}
             for req in requirements:
                 if req.get("verification_criteria"):
                     try:
@@ -295,6 +295,7 @@ class Node1ExtractRequirements:
 
         # Update state
         state["requirements"] = requirements
+        state["test_patterns"] = test_patterns_data
         state["errors"] = errors
 
         # Print completion status

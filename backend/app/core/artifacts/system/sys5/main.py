@@ -41,8 +41,10 @@ def run_workflow(config: Dict[str, Any]) -> str:
     initial_state: SYS5State = {
         "config": config,
         "requirements": [],
+        "test_patterns": {},
         "feature_details": {},
         "logical_signals": [],
+        "model_config": {},
         "errors": [],
         "timestamp": timestamp
     }
@@ -67,8 +69,10 @@ def run_workflow(config: Dict[str, Any]) -> str:
         "total_logical_signals": len(final_state["logical_signals"]),
         "total_features": len(final_state["feature_details"]),
         "requirements": final_state["requirements"],
+        "test_patterns": final_state["test_patterns"],
         "logical_signals": final_state["logical_signals"],
         "feature_details": final_state["feature_details"],
+        "model_config": final_state["model_config"],
         "errors": final_state["errors"],
         "timestamp": timestamp
     }
@@ -81,6 +85,8 @@ def run_workflow(config: Dict[str, Any]) -> str:
     print(f"Total Requirements: {result['total_requirements']}")
     print(f"Total Logical Signals: {result['total_logical_signals']}")
     print(f"Total Features: {result['total_features']}")
+    print(f"Model Input Mapping (matched): {len(result['model_config'].get('model_input_mapping', {}))}")
+    print(f"Tolerances (matched): {len(result['model_config'].get('tolerances', {}))}")
     if result["errors"]:
         print(f"Errors: {result['errors']}")
     print(f"{'='*80}\n")

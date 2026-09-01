@@ -11,15 +11,20 @@ class SYS5State(TypedDict):
     Tracks the following information across nodes:
     - config: Input configuration
     - requirements: Extracted requirements data (Node 1)
+    - test_patterns: LLM-generated test patterns keyed by req_id (Node 1)
     - feature_details: Signal/command data keyed by signal name (Node 2 - Signal Name,
       Node 3 - Logical Signal Name with underscore), so entries can be looked up later
     - logical_signals: Logical signal extraction results (Node 3)
+    - model_config: Filtered Model Input Mapping + Tolerances, bundled with test
+      patterns for later requirement <-> config mapping (Node 5)
     - errors: Any errors encountered during processing
     - timestamp: Execution timestamp for artifacts
     """
     config: Dict[str, Any]
     requirements: List[Dict[str, Any]]
+    test_patterns: Dict[str, Any]
     feature_details: Dict[str, Any]
     logical_signals: List[Dict[str, Any]]
+    model_config: Dict[str, Any]
     errors: List[str]
     timestamp: str
