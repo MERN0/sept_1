@@ -54,24 +54,24 @@ class Node2FindSignalsAndCommands:
 
         input_folder = config.get("input_folder_path")
         output_dir = config.get("output_dir")
+        req_filename = config.get("req_filename", "reqs_to_use.xlsx")
 
         abs_input_folder = resolve_path(input_folder) if input_folder else None
         abs_output_dir = resolve_path(output_dir)
 
-        # Search for System Requirements and Command List files in input directory
-        abs_sys_req_path = None
-        abs_cmd_list_path = None
+        # System Requirements file is the same req_filename used in Node 1
+        abs_sys_req_path = os.path.join(abs_input_folder, req_filename) if abs_input_folder else None
 
+        # Search for Command List file in input directory
+        abs_cmd_list_path = None
         if abs_input_folder and os.path.exists(abs_input_folder):
             for filename in os.listdir(abs_input_folder):
-                if filename.endswith('.xlsx'):
-                    if "system" in filename.lower() and "requirement" in filename.lower():
-                        abs_sys_req_path = os.path.join(abs_input_folder, filename)
-                    if "command" in filename.lower() and "list" in filename.lower():
-                        abs_cmd_list_path = os.path.join(abs_input_folder, filename)
+                if filename.endswith('.xlsx') and "command" in filename.lower() and "list" in filename.lower():
+                    abs_cmd_list_path = os.path.join(abs_input_folder, filename)
+                    break
 
-        if not abs_sys_req_path:
-            error_msg = f"System Requirements file not found in {abs_input_folder}"
+        if not abs_sys_req_path or not os.path.exists(abs_sys_req_path):
+            error_msg = f"System Requirements file not found: {abs_sys_req_path}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
