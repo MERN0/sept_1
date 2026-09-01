@@ -170,19 +170,16 @@ class Node3ExtractLogicalSignals:
             for idx, row in filtered.iterrows():
                 logical_name = str(row['Logical Signal Name']).strip()
 
-                # Replace underscores with spaces for display
+                # Replace underscores with spaces
                 formatted_name = logical_name.replace('_', ' ')
 
-                # Remove underscores for searching
-                search_name = logical_name.replace('_', '')
-
-                # Search for substring match in Command List row-by-row
+                # Search for substring match in Command List row-by-row using formatted name
                 matched_row = None
                 for cmd_idx, cmd_row in command_list_df.iterrows():
-                    # Check if search_name (without underscores) exists as substring in any cell of this row
+                    # Check if formatted_name exists as substring in any cell of this row
                     row_found = False
                     for col_val in cmd_row.values:
-                        if search_name in str(col_val).replace('_', ''):
+                        if formatted_name in str(col_val):
                             row_found = True
                             break
 
@@ -203,7 +200,7 @@ class Node3ExtractLogicalSignals:
                     logical_signals.append(signal_data)
                     print(f"[LOG] {logical_name} -> {formatted_name} | C: {signal_data['command_code']}, E: {signal_data['validation_method']}")
                 else:
-                    print(f"[LOG] No match found for '{logical_name}' (searched as '{search_name}') in Command List")
+                    print(f"[LOG] No match found for '{formatted_name}' in Command List")
 
         print(f"\n[LOG] Total logical signals extracted: {len(logical_signals)}\n")
 
