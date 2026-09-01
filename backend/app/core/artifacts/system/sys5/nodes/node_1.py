@@ -122,13 +122,24 @@ class Node1ExtractRequirements:
                     row_dict = row.to_dict()
                     row_dict = {k: (None if pd.isna(v) else v) for k, v in row_dict.items()}
 
+                    # Get requirement ID from data (look for common ID column names)
+                    req_id = None
+                    for id_col in ["REQ_ID", "Req_ID", "req_id", "ID", "Requirement ID"]:
+                        if id_col in row_dict and row_dict[id_col]:
+                            req_id = str(row_dict[id_col])
+                            break
+
+                    if not req_id:
+                        req_id = f"REQ_{idx}"
+
                     requirement = {
+                        "req_id": req_id,
                         "row_index": int(idx),
                         "data": row_dict,
                         "type": "Functional"
                     }
                     requirements.append(requirement)
-                    print(f"      → Extracted: {row_dict}\n")
+                    print(f"      → Extracted: {req_id}\n")
 
             # Summary
             print(f"\n[SUMMARY] Total functional requirements extracted: {len(requirements)}\n")
@@ -139,7 +150,7 @@ class Node1ExtractRequirements:
                 criteria = extract_verification_criteria(req["data"])
                 req["verification_criteria"] = criteria
                 if criteria:
-                    print(f"[LOG] Req {req.get('row_index')}: Found criteria: {criteria[:100]}...\n")
+                    print(f"[LOG] {req['req_id']}: Found criteria: {criteria[:100]}...\n")
 
             # Create output directory
             ensure_directory_exists(abs_output_dir)
@@ -192,7 +203,7 @@ class Node1ExtractRequirements:
             for req in requirements:
                 if req.get("verification_criteria"):
                     try:
-                        req_id = req["data"].get("REQ_ID", f"REQ_{req['row_index']}")
+                        req_id = req["req_id"]
                         req_desc = req["data"].get("Description", "")
                         criteria = req["verification_criteria"]
 

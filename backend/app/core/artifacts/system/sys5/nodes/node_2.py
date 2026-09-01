@@ -53,35 +53,39 @@ class Node2FindSignalsAndCommands:
         feature_details_map = {}
 
         sys_req_file = config.get("system_requirements_file")
-        cmd_list_file = config.get("command_list_file")
+        input_folder = config.get("input_folder_path")
         output_dir = config.get("output_dir")
 
-        if not sys_req_file or not cmd_list_file:
-            error_msg = "Missing system_requirements_file or command_list_file in config"
+        if not sys_req_file:
+            error_msg = "Missing system_requirements_file in config"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
             return state
 
         abs_sys_req_path = resolve_path(sys_req_file)
-        abs_cmd_list_path = resolve_path(cmd_list_file)
+        abs_input_folder = resolve_path(input_folder) if input_folder else None
         abs_output_dir = resolve_path(output_dir)
 
+        # Search for Command List file in input directory
+        abs_cmd_list_path = None
+        if abs_input_folder and os.path.exists(abs_input_folder):
+            for filename in os.listdir(abs_input_folder):
+                if "command" in filename.lower() and "list" in filename.lower() and filename.endswith('.xlsx'):
+                    abs_cmd_list_path = os.path.join(abs_input_folder, filename)
+                    break
+
         print(f"[LOG] System Requirements file: {abs_sys_req_path}")
-        print(f"[LOG] Command List file: {abs_cmd_list_path}")
+        if abs_cmd_list_path:
+            print(f"[LOG] Command List file: {abs_cmd_list_path}")
+        else:
+            print(f"[LOG] Command List file: Not found (will continue without it)")
         print(f"[LOG] Output directory: {abs_output_dir}\n")
 
         try:
-            # Validate files exist
+            # Validate System Requirements file exists
             if not os.path.exists(abs_sys_req_path):
                 error_msg = f"System Requirements file not found: {abs_sys_req_path}"
-                print(f"[ERROR] {error_msg}\n")
-                errors.append(error_msg)
-                state["errors"] = errors
-                return state
-
-            if not os.path.exists(abs_cmd_list_path):
-                error_msg = f"Command List file not found: {abs_cmd_list_path}"
                 print(f"[ERROR] {error_msg}\n")
                 errors.append(error_msg)
                 state["errors"] = errors
@@ -106,22 +110,25 @@ class Node2FindSignalsAndCommands:
                 comm_matrix_df = None
 
             # Load Command List from separate file
-            print(f"[LOG] Loading Command List sheet...")
-            try:
-                cmd_list_df = pd.read_excel(abs_cmd_list_path, sheet_name="Command List")
-                print(f"[LOG] Command List loaded: {len(cmd_list_df)} rows\n")
-            except Exception as e:
-                print(f"[WARNING] Could not load Command List: {str(e)}")
-                cmd_list_df = None
+            cmd_list_df = None
+            if abs_cmd_list_path:
+                print(f"[LOG] Loading Command List sheet...")
+                try:
+                    cmd_list_df = pd.read_excel(abs_cmd_list_path, sheet_name="Command List")
+                    print(f"[LOG] Command List loaded: {len(cmd_list_df)} rows\n")
+                except Exception as e:
+                    print(f"[WARNING] Could not load Command List: {str(e)}")
+                    cmd_list_df = None
+            else:
+                print(f"[LOG] Command List file not found in input directory, skipping command details\n")
 
             # Process each requirement
             print(f"[LOG] Processing {len(requirements)} requirements for signal matching...\n")
 
             for req in requirements:
-                req_data = req.get("data", {})
-                req_id = req_data.get("REQ_ID", f"REQ_{req.get('row_index')}")
+                req_id = req.get("req_id", f"REQ_{req.get('row_index')}")
 
-                # Extract feature number from REQ_ID (e.g., "REQ_019" → "019")
+                # Extract feature number from REQ_ID (e.g., "019" → "019")
                 feature_match = re.search(r'(\d{3})', req_id)
                 if not feature_match:
                     print(f"[LOG] {req_id}: Could not extract feature number\n")
