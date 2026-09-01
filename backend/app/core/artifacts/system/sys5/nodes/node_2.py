@@ -371,27 +371,32 @@ class Node2FindSignalsAndCommands:
     @staticmethod
     def _find_command_details(signal_name: str, cmd_list_df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """
-        Find command details from Command List sheet (columns B to I)
+        Find command details from Command List sheet by matching signal_name
+        against column F, returning columns C and E
 
         Args:
-            signal_name: Signal name to search for in Command List
+            signal_name: Signal name to search for in Command List column F
             cmd_list_df: Command List DataFrame
 
         Returns:
-            Dictionary with command details from columns B to I, or None
+            Dictionary with values from columns C and E, or None
         """
         try:
-            # Search for matching signal name in column A
+            # Column F = index 5
+            if len(cmd_list_df.columns) <= 5:
+                return None
+
+            col_f = cmd_list_df.columns[5]
             matching_rows = cmd_list_df[
-                cmd_list_df.iloc[:, 0].astype(str).str.contains(re.escape(signal_name), case=False, na=False)
+                cmd_list_df[col_f].astype(str).str.contains(re.escape(signal_name), case=False, na=False)
             ]
 
             if len(matching_rows) > 0:
                 row = matching_rows.iloc[0]
 
-                # Extract columns B to I (indices 1 to 8)
+                # Extract columns C (index 2) and E (index 4)
                 cmd_details = {}
-                for idx in range(1, 9):
+                for idx in (2, 4):
                     if idx < len(cmd_list_df.columns):
                         col_name = cmd_list_df.columns[idx]
                         value = row.iloc[idx]
