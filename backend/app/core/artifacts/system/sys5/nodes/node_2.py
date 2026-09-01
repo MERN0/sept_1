@@ -256,11 +256,22 @@ class Node2FindSignalsAndCommands:
 
         try:
             # Look for rows where Feature Number column matches
-            # Assuming Index sheet has columns like "Feature Number", "Feature Name", "Feature Group"
-            matching_rows = index_df[
-                (index_df.iloc[:, 0].astype(str) == feature_num) |
-                (index_df.iloc[:, 0].astype(str).str.contains(feature_num, na=False))
-            ]
+            # Try multiple comparison approaches to handle numeric/string variations
+
+            # Convert first column to strings for comparison
+            first_col = index_df.iloc[:, 0].astype(str).str.strip()
+
+            # Try exact match (e.g., "019" == "019")
+            matching_rows = index_df[first_col == feature_num]
+
+            # If no exact match, try without leading zeros (e.g., "019" matches 19)
+            if len(matching_rows) == 0:
+                feature_num_unpadded = str(int(feature_num)) if feature_num.isdigit() else feature_num
+                matching_rows = index_df[first_col == feature_num_unpadded]
+
+            # If still no match, try substring search
+            if len(matching_rows) == 0:
+                matching_rows = index_df[first_col.str.contains(feature_num, na=False, regex=False)]
 
             if len(matching_rows) > 0:
                 row = matching_rows.iloc[0]
