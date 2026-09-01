@@ -159,13 +159,13 @@ class Node2FindSignalsAndCommands:
 
                 cmd_row = cmd_match.iloc[0]
 
-                # Extract columns C (Command Code) and E (Validation Method)
+                # Extract Command Name and Signal Description
                 signal_data = {
                     "req_id": "",
                     "feature_number": feature_num,
                     "signal_name": signal_name,
-                    "command_code": str(cmd_row['Command Code']),
-                    "validation_method": str(cmd_row['Validation Method'])
+                    "command_name": str(cmd_row.get('Command Name', '')),
+                    "signal_description": str(cmd_row.get('Signal Description', ''))
                 }
 
                 # Match signal to requirement
@@ -177,7 +177,7 @@ class Node2FindSignalsAndCommands:
                         break
 
                 signals.append(signal_data)
-                print(f"[LOG] Extracted: {signal_name} -> C: {signal_data['command_code']}, E: {signal_data['validation_method']}")
+                print(f"[LOG] Extracted: {signal_name} -> {signal_data['command_name']}, {signal_data['signal_description']}")
 
         state["signals"] = signals
         state["feature_details"] = {}
