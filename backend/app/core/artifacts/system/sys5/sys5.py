@@ -6,11 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
 
-# Mock settings object for demonstration
-class Settings:
-    def __init__(self, output_dir: str):
-        self.output_dir = output_dir
-        self.project_name = ""
+# Import the LangGraph agent framework
+from .agent_graph import run_sys5_workflow
 
 
 def extract_functional_requirements(excel_path: str, sheet_name: str) -> List[Dict[str, Any]]:
@@ -90,60 +87,48 @@ def save_requirements_to_json(requirements: List[Dict[str, Any]], output_path: s
 
 
 def generate(config: dict) -> str:
-    """Entry point for SYS5 generation"""
+    """
+    Entry point for SYS5 generation using LangGraph agentic framework
 
-    # Initialize settings
-    output_dir = config.get("output_dir")
-    project_name = config.get("project_name")
-    settings = Settings(output_dir)
-    settings.project_name = project_name
+    This function orchestrates the multi-phase SYS5 artifact generation process
+    using a LangGraph-based workflow with distinct nodes for each phase.
 
-    produced = {}
+    Args:
+        config: Configuration dictionary containing:
+            - project_name: Name of the project
+            - output_dir: Output directory for artifacts
+            - input_folder_path: Path to input files
+            - req_filename: Excel requirements filename
+            - req_sheet_name: Sheet name in Excel file
+            - And other configuration parameters
+
+    Returns:
+        JSON string with workflow results and artifacts
+    """
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = config.get("output_dir")
 
-    # ========================== PHASE 1: Requirements Extraction ==========================
-    print(f"[PHASE 1] Starting Requirements Extraction...")
+    # Run the LangGraph-based workflow
+    result_json = run_sys5_workflow(config)
 
-    # Get input file path
-    input_folder = config.get("input_folder_path")
-    req_filename = config.get("req_filename", "reqs_to_use.xlsx")
-    req_sheet_name = config.get("req_sheet_name", "005")
-
-    excel_file_path = os.path.join(input_folder, req_filename)
-
-    # Extract requirements
-    if os.path.exists(excel_file_path):
-        requirements = extract_functional_requirements(excel_file_path, req_sheet_name)
-        print(f"[PHASE 1] Extracted {len(requirements)} functional requirements")
-
-        # Save requirements to JSON
-        json_output_path = os.path.join(output_dir, f"requirements_{timestamp}.json")
-        save_requirements_to_json(requirements, json_output_path)
-        print(f"[PHASE 1] Requirements saved to {json_output_path}")
-
-        produced["requirements"] = {
-            "total_count": len(requirements),
-            "file_path": json_output_path,
-            "requirements": requirements
-        }
-    else:
-        print(f"[PHASE 1] WARNING: Excel file not found at {excel_file_path}")
-        produced["requirements"] = {
-            "total_count": 0,
-            "file_path": None,
-            "requirements": [],
-            "error": f"File not found: {excel_file_path}"
-        }
+    # Parse result for packaging
+    result = json.loads(result_json)
 
     # ========================== Do not change ==========================
-    zip_path = os.path.join(settings.output_dir, f"SYS5_{settings.project_name}_{timestamp}.zip")
+    # Package all output files into a zip
+    zip_path = os.path.join(output_dir, f"SYS5_{config.get('project_name')}_{timestamp}.zip")
+    os.makedirs(output_dir, exist_ok=True)
+
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for filename in os.listdir(settings.output_dir):
-            file_path = os.path.join(settings.output_dir, filename)
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
             if os.path.isfile(file_path) and not filename.endswith(".zip"):
                 zf.write(file_path, arcname=filename)
 
-    return str(produced)
+    result["output_zip"] = zip_path
+
+    return json.dumps(result, indent=2)
 
 
 if __name__ == "__main__":
