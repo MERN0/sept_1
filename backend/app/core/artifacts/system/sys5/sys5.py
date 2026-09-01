@@ -53,7 +53,6 @@ if __name__ == "__main__":
         "output_dir": "files/test@tataelxsi.co.in/swe6_5/V1.0/SWE6/output",
         "req_filename": "reqs_to_use.xlsx",
         "req_sheet_name": "005",
-        "system_requirements_file": "files/test@tataelxsi.co.in/swe6_5/V1.0/SWE6/input/System Requirements.xlsx",
     }
     result = generate(config)
     print("\n" + "="*80)

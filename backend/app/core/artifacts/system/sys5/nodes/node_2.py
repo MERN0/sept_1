@@ -52,28 +52,30 @@ class Node2FindSignalsAndCommands:
         signals_data = []
         feature_details_map = {}
 
-        sys_req_file = config.get("system_requirements_file")
         input_folder = config.get("input_folder_path")
         output_dir = config.get("output_dir")
 
-        if not sys_req_file:
-            error_msg = "Missing system_requirements_file in config"
+        abs_input_folder = resolve_path(input_folder) if input_folder else None
+        abs_output_dir = resolve_path(output_dir)
+
+        # Search for System Requirements and Command List files in input directory
+        abs_sys_req_path = None
+        abs_cmd_list_path = None
+
+        if abs_input_folder and os.path.exists(abs_input_folder):
+            for filename in os.listdir(abs_input_folder):
+                if filename.endswith('.xlsx'):
+                    if "system" in filename.lower() and "requirement" in filename.lower():
+                        abs_sys_req_path = os.path.join(abs_input_folder, filename)
+                    if "command" in filename.lower() and "list" in filename.lower():
+                        abs_cmd_list_path = os.path.join(abs_input_folder, filename)
+
+        if not abs_sys_req_path:
+            error_msg = f"System Requirements file not found in {abs_input_folder}"
             print(f"[ERROR] {error_msg}\n")
             errors.append(error_msg)
             state["errors"] = errors
             return state
-
-        abs_sys_req_path = resolve_path(sys_req_file)
-        abs_input_folder = resolve_path(input_folder) if input_folder else None
-        abs_output_dir = resolve_path(output_dir)
-
-        # Search for Command List file in input directory
-        abs_cmd_list_path = None
-        if abs_input_folder and os.path.exists(abs_input_folder):
-            for filename in os.listdir(abs_input_folder):
-                if "command" in filename.lower() and "list" in filename.lower() and filename.endswith('.xlsx'):
-                    abs_cmd_list_path = os.path.join(abs_input_folder, filename)
-                    break
 
         print(f"[LOG] System Requirements file: {abs_sys_req_path}")
         if abs_cmd_list_path:
@@ -83,14 +85,6 @@ class Node2FindSignalsAndCommands:
         print(f"[LOG] Output directory: {abs_output_dir}\n")
 
         try:
-            # Validate System Requirements file exists
-            if not os.path.exists(abs_sys_req_path):
-                error_msg = f"System Requirements file not found: {abs_sys_req_path}"
-                print(f"[ERROR] {error_msg}\n")
-                errors.append(error_msg)
-                state["errors"] = errors
-                return state
-
             # Load Index sheet to map feature numbers to names and groups
             print(f"[LOG] Loading Index sheet from System Requirements file...")
             try:
