@@ -12,13 +12,13 @@ try:
     from ..config import get_llm
     from ..prompts import build_validate_input, build_validate_prompt
     from ..schema import parse_and_validate_validation_result
-    from ..utils import check_step_grounding
+    from ..utils import check_step_grounding, check_enum_parameter_usage
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
     from backend.app.core.artifacts.system.sys5.prompts import build_validate_input, build_validate_prompt
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_validation_result
-    from backend.app.core.artifacts.system.sys5.utils import check_step_grounding
+    from backend.app.core.artifacts.system.sys5.utils import check_step_grounding, check_enum_parameter_usage
 
 
 class Node8ValidateTestCases:
@@ -26,13 +26,17 @@ class Node8ValidateTestCases:
     Node 8: Validate each generated test case against its requirement/test
     pattern and the known signal/command/library pool.
 
-    Two checks run, not just the LLM's own opinion:
+    Three checks run, not just the LLM's own opinion:
     1. A deterministic grounding check (utils/grounding_check.py) that
        cross-references every step's referenced signal/compound/library name
        against the actual names extracted in Nodes 2-6 - this catches a
        hallucinated name even if the LLM's own semantic validation misses it.
-    2. The LLM Validate prompt (prompts.py), for everything the deterministic
-       check can't see (phase ordering, coverage of the test pattern, etc).
+    2. A deterministic enum-parameter check: for a Set step on a
+       model_input_mapping signal, parameter_settings must hold the
+       human-readable test_case_input value (e.g. "FWD", "ON"), not the
+       internal numeric model_input code, and not be misplaced into units.
+    3. The LLM Validate prompt (prompts.py), for everything the deterministic
+       checks can't see (phase ordering, coverage of the test pattern, etc).
 
     Either source failing marks the test case invalid. Sets
     validation_result = {"valid": bool, "issues": [...]}, which graph.py's
@@ -66,12 +70,21 @@ class Node8ValidateTestCases:
 
             # 1. Deterministic grounding check against the actual extracted data
             feature_bundle = entry.get("generate_input", {}).get("feature_bundle", {})
-            grounding_issues = check_step_grounding(generated_output.get("steps", []), feature_bundle)
+            steps = generated_output.get("steps", [])
+            grounding_issues = check_step_grounding(steps, feature_bundle)
             if grounding_issues:
                 print(f"[LOG] {req_id}: grounding check found {len(grounding_issues)} issue(s): "
                       f"{grounding_issues}\n")
 
-            # 2. LLM Validate prompt for everything the grounding check can't see
+            # 2. Deterministic enum-parameter check (test_case_input vs model_input code)
+            enum_issues = check_enum_parameter_usage(steps, feature_bundle)
+            if enum_issues:
+                print(f"[LOG] {req_id}: enum parameter check found {len(enum_issues)} issue(s): "
+                      f"{enum_issues}\n")
+
+            deterministic_issues = grounding_issues + enum_issues
+
+            # 3. LLM Validate prompt for everything the deterministic checks can't see
             validate_input = build_validate_input(entry.get("generate_input", {}), generated_output)
             prompt = build_validate_prompt(validate_input)
 
@@ -85,9 +98,9 @@ class Node8ValidateTestCases:
                 entry["status"] = "validate_failed"
 
             # Merge: either source failing marks the test case invalid
-            combined_issues = grounding_issues + validation_result.get("issues", [])
+            combined_issues = deterministic_issues + validation_result.get("issues", [])
             validation_result = {
-                "valid": validation_result.get("valid", False) and not grounding_issues,
+                "valid": validation_result.get("valid", False) and not deterministic_issues,
                 "issues": combined_issues,
             }
             print(f"[LOG] {req_id}: valid={validation_result['valid']}, issues={validation_result['issues']}\n")

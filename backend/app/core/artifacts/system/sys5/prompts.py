@@ -80,6 +80,12 @@ MANDATORY RULES:
 3. Resolve any scenario-parameter-to-signal/model-input dependency (e.g. a size/mode/direction
    factor implying a particular model input, map, or load value) using the model_input_mapping
    data given below - do not infer such a mapping yourself if it isn't explicitly present there.
+3a. Each model_input_mapping row has a human-readable "test_case_input" (e.g. "FWD", "BWD", "P",
+    "S", "E", "NL", "FL", "ON", "OFF") AND a separate internal numeric "model_input" code (e.g.
+    1, 2, 3) for that same row. For a Set step, parameter_settings MUST be the test_case_input
+    value - the enum/state label a human would recognize - never the numeric model_input code.
+    Also never place this value in "units" - units is only for a physical unit (ms, kg, deg,
+    km/h, etc.); an enum/state label like "FWD" or "ON" is never a unit.
 4. Never invent a tolerance or acceptance range. Use only an exact expected value, a comparison
    operator, or a tolerance that appears in the tolerances data given below.
 5. Prefer the current requirement/test pattern's own values over any stale remark text if they
@@ -165,7 +171,11 @@ the known data above - flag anything that looks invented, (2) every step's keywo
 Test_Start/End_of_test/Set/Verify/Wait/Wait_Until/Compound/Lib_*, (3) numeric values and units
 are in separate fields, never concatenated, (4) no tolerance or expected value was invented
 beyond what the known data supports, (5) steps are ordered PRECONDITION then ACTION then
-POSTCONDITION, (6) the test pattern's preconditions/actions/expected_result are all covered.
+POSTCONDITION, (6) the test pattern's preconditions/actions/expected_result are all covered,
+(7) for a Set step whose signal is in model_input_mapping, parameter_settings holds the
+human-readable test_case_input value (e.g. "FWD", "P", "NL", "ON") - flag it if the numeric
+model_input code was used instead, or if that value was placed in "units" instead of
+parameter_settings.
 
 Output ONLY valid JSON, no extra text:
 {{"valid": true or false, "issues": ["short description of each problem found"]}}"""

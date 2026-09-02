@@ -165,3 +165,69 @@ def check_step_grounding(steps: List[Dict[str, Any]], feature_bundle: Dict[str, 
             )
 
     return issues
+
+
+def check_enum_parameter_usage(steps: List[Dict[str, Any]], feature_bundle: Dict[str, Any]) -> List[str]:
+    """
+    For a Set step whose signal is in model_input_mapping, verify
+    parameter_settings holds the human-readable test_case_input value
+    (e.g. "FWD", "P", "NL", "ON") for that row, not the internal numeric
+    model_input code (e.g. 1, 2, 3) - and that the value wasn't misplaced
+    into "units" instead of parameter_settings. Same "trust code over
+    prompt wording" rationale as check_step_grounding: the Generate/Validate
+    prompt states this rule too, but a deterministic check catches it even
+    when the LLM doesn't follow it.
+    """
+    model_input_mapping = feature_bundle.get("model_input_mapping") or {}
+    normalized_mapping = []
+    for signal, variants in model_input_mapping.items():
+        if isinstance(variants, list):
+            normalized_mapping.append((_normalize(signal), signal, variants))
+
+    issues = []
+    for step in steps:
+        step_text = str(step.get("step_text", "")).strip()
+        match = _STEP_PATTERN.match(step_text)
+        if not match or match.group("keyword").lower() != "set":
+            continue
+        target = match.group("target")
+        if not target:
+            continue
+        normalized_target = _normalize(target)
+
+        variants = None
+        matched_signal = None
+        for normalized_signal, signal, v in normalized_mapping:
+            if normalized_target in normalized_signal or normalized_signal in normalized_target:
+                variants, matched_signal = v, signal
+                break
+        if not variants:
+            continue
+
+        test_case_inputs = {
+            str(v["test_case_input"]).strip() for v in variants
+            if isinstance(v, dict) and v.get("test_case_input") is not None
+        }
+        model_input_codes = {
+            str(v["model_input"]).strip() for v in variants
+            if isinstance(v, dict) and v.get("model_input") is not None
+        }
+
+        param = step.get("parameter_settings")
+        units = step.get("units")
+        param_str = None if param is None else str(param).strip()
+        units_str = None if units is None else str(units).strip()
+
+        if param_str and param_str in model_input_codes and param_str not in test_case_inputs:
+            issues.append(
+                f"Step {step.get('step_no', '?')}: '{step_text}' has parameter_settings='{param_str}', "
+                f"which is the internal model_input code for {matched_signal} - use the human-readable "
+                f"test_case_input value instead (one of {sorted(test_case_inputs)})"
+            )
+        elif not param_str and units_str and units_str in test_case_inputs:
+            issues.append(
+                f"Step {step.get('step_no', '?')}: '{step_text}' has the enum value '{units_str}' in units "
+                f"instead of parameter_settings for {matched_signal}"
+            )
+
+    return issues
