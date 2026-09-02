@@ -34,7 +34,15 @@ def get_prompt_from_agentchain(
 
     for agent in agentchain:
         if isinstance(agent, dict) and agent.get("agent_name") == agent_name:
-            return agent.get("prompt_content", default)
+            prompt = agent.get("prompt_content")
+            if prompt:
+                return prompt
+            else:
+                # Agent found but prompt_content is empty - log this
+                import sys
+                print(f"[DEBUG] Agent '{agent_name}' found but prompt_content is empty/null", file=sys.stderr)
+                print(f"[DEBUG] Agent keys: {list(agent.keys())}", file=sys.stderr)
+                return default
 
     return default
 
