@@ -1,229 +1,291 @@
 """
-Excel writer for the Test Cases output workbook.
+Excel writer for the SYS5 output workbook - structure matches the reference
+implementation in the work_28 repo's xlsx_writer.py (same tab layout, same
+Test Cases merge strategy), adapted to this pipeline's own state shapes
+(plain dicts from Nodes 1-9, not work_28's pydantic schema).
 
-Produces two sheets, matching the required template:
-- "Item_List": one row per test case (Test Type, Feature Name, Test Case ID,
-  Variant, Execution Requirement) - a flat index of everything generated.
-- "Test Cases": one block per test case, stacked vertically in the same
-  sheet. Each block has a header row (Function ID/Feature/Variant/
-  Requirement ID/Priority/Mode of Execution/Automated/Test case Description)
-  followed by the step table (Test Phase/Step/Test steps/Parameter
-  Settings/Units/Expected Value/Units/Deviation to execute the
-  command/Remarks), with the Test Phase column merged across each
-  PRECONDITION/ACTION/POSTCONDITION group of steps.
+Sheets written: Cover Page, Test Pattern, Item List, Configurable Parameters,
+Test Cases.
 
-Expected shape of each entry in `test_cases` (a list, one dict per test case):
+Once Node 7 (Generate) produces real content, each entry in
+state["test_cases"][req_id]["generated_output"] should be shaped as:
 {
-    "test_case_id": str,          # e.g. "TMHC_SQTC_22"
-    "feature": str,               # e.g. "Slope Assist"
-    "variant": str,               # e.g. "A1"
-    "requirement_id": str,        # e.g. "5.2.1"
-    "priority": str,              # e.g. "P1"
-    "mode_of_execution": str,     # e.g. "Automated"
-    "automated": str,             # e.g. "Automated" / "Manual"
+    "test_case_id": str,
+    "feature": str,
+    "variant": Optional[str],
+    "requirement_ids": list[str],
+    "priority": Optional[str],
+    "mode_of_execution": str,          # e.g. "Automated"
     "description": str,
-    "test_type": str,             # for Item_List, e.g. "System Qualification"
-    "execution_requirement": str, # for Item_List
+    "status": "clean" | "flagged",
+    "flag_reason": Optional[str],
+    "remarks_summary": Optional[str],  # compact summary for Item List
     "steps": [
         {
-            "phase": "PRECONDITION" | "ACTION" | "POSTCONDITION" | "Test start" | "End of test",
-            "step": int,
-            "test_step": str,
-            "parameter_settings": Any,
-            "units": Any,
-            "expected_value": Any,
-            "units_2": Any,
-            "deviation": Any,      # "Deviation to execute the command"
-            "remarks": Any,
+            "step_no": int,
+            "phase": "PRECONDITION" | "ACTION" | "POSTCONDITION",
+            "step_text": str,
+            "parameter_settings": Optional[str],
+            "units": Optional[str],
+            "expected_value": Optional[str],
+            "units2": Optional[str],
+            "whether_execute": str,    # "Yes"/"No"
+            "remarks": Optional[str],
         },
         ...
-    ]
+    ],
 }
-
-Missing/empty fields are written as blank cells - the writer never crashes on
-incomplete data, since Nodes 7-9 currently produce placeholder test cases
-until the Generate/Validate/Correct prompts are written.
+This writer never crashes on missing/placeholder fields - everything is
+read with .get(...) and blanks are written for anything absent, since
+Nodes 7-9 only produce this shape once the Generate/Validate/Correct
+prompts (prompts.py) are written.
 """
 
-from typing import Any, Dict, List, Optional
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 
-HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-HEADER_FONT = Font(bold=True, color="FFFFFF")
-LABEL_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-LABEL_FONT = Font(bold=True)
-THIN_BORDER = Border(
-    left=Side(style="thin"), right=Side(style="thin"),
-    top=Side(style="thin"), bottom=Side(style="thin")
-)
-WRAP_TOP = Alignment(wrap_text=True, vertical="top")
-CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+_HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+_HEADER_FONT = Font(bold=True)
+_TOP_ALIGN = Alignment(vertical="top", wrap_text=True)
 
-# "Test Cases" sheet step-table columns
-STEP_TABLE_HEADERS = [
-    "Test Phase", "Step", "Test steps", "Parameter Settings", "Units",
-    "Expected Value", "Units", "Deviation to execute the command", "Remarks"
-]
-STEP_FIELD_ORDER = [
-    "phase", "step", "test_step", "parameter_settings", "units",
-    "expected_value", "units_2", "deviation", "remarks"
+_TEST_CASE_COLUMNS = [
+    "TestCase ID", "Feature", "Variant", "Requirement IDs", "Priority", "Mode of Execution",
+    "Test case Description", "Test Phase", "Step", "Test steps", "Parameter Settings", "Units",
+    "Expected Value", "Units", "Whether to execute the command", "Remarks",
 ]
 
-# Header info block above each test case's step table
-INFO_HEADERS = [
-    "Function ID", "Feature", "Variant", "Requirement ID",
-    "Priority", "Mode of Execution", "Automated", "Test case Description"
-]
-INFO_FIELD_ORDER = [
-    "test_case_id", "feature", "variant", "requirement_id",
-    "priority", "mode_of_execution", "automated", "description"
-]
-
-ITEM_LIST_HEADERS = [
-    "Test Type", "Feature Name", "Test Case ID", "Variant", "Execution Requirement"
+_ITEM_LIST_COLUMNS = [
+    "Testcase No", "Test type", "Feature Name", "Test Case ID", "Variant", "Execution Required", "Remarks"
 ]
 
 
-def _set_header_row(ws, row: int, headers: List[str], start_col: int = 1):
-    for i, header in enumerate(headers):
-        col = start_col + i
-        cell = ws.cell(row=row, column=col, value=header)
-        cell.font = HEADER_FONT
-        cell.fill = HEADER_FILL
-        cell.alignment = CENTER
-        cell.border = THIN_BORDER
+def _style_header_row(ws: Worksheet, row: int, ncols: int) -> None:
+    for col in range(1, ncols + 1):
+        cell = ws.cell(row=row, column=col)
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
 
 
-def write_item_list_sheet(wb: Workbook, test_cases: List[Dict[str, Any]]) -> None:
-    """Write the 'Item_List' sheet - a flat index of every test case"""
-    ws = wb.create_sheet("Item_List")
-    _set_header_row(ws, 1, ITEM_LIST_HEADERS)
+def _write_cover_page(wb: Workbook, state: Dict[str, Any], config: Dict[str, Any]) -> None:
+    ws = wb.create_sheet("Cover Page")
+    ws.append(["System Qualification Test Specification"])
+    ws.append([])
+    ws.append(["Project", config.get("project_name", "")])
+    ws.append(["Version", config.get("version", "")])
+    ws.append(["Feature", f"{config.get('feature_id', '')} - {config.get('feature_name', '')}".strip(" -")])
+    ws.append(["Generated", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")])
+    ws.append(["Requirements processed", len(state.get("requirements", []))])
+    test_cases = state.get("test_cases", {})
+    ws.append(["Test cases tracked", len(test_cases)])
+    flagged = sum(1 for tc in test_cases.values() if (tc.get("generated_output") or {}).get("status") == "flagged")
+    ws.append(["Test cases flagged for review", flagged])
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 60
 
-    row = 2
-    for tc in test_cases:
-        ws.cell(row=row, column=1, value=tc.get("test_type", "")).border = THIN_BORDER
-        ws.cell(row=row, column=2, value=tc.get("feature", "")).border = THIN_BORDER
-        ws.cell(row=row, column=3, value=tc.get("test_case_id", "")).border = THIN_BORDER
-        ws.cell(row=row, column=4, value=tc.get("variant", "")).border = THIN_BORDER
-        ws.cell(row=row, column=5, value=tc.get("execution_requirement", "")).border = THIN_BORDER
-        row += 1
 
-    for col in range(1, len(ITEM_LIST_HEADERS) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 22
-
-
-def _write_test_case_block(ws, start_row: int, tc: Dict[str, Any]) -> int:
+def _write_test_pattern(wb: Workbook, state: Dict[str, Any]) -> None:
     """
-    Write one test case's info header block + step table starting at
-    start_row. Returns the row number to start the next block at.
+    This pipeline's test_patterns[req_id] shape is {"test_cases": [...],
+    "factors": {...}, "summary": ...} (Node 1) rather than work_28's
+    TestPatternRow list, so columns are derived from the union of
+    preconditions/actions field names actually present instead of a fixed
+    fixed/variable factor split.
     """
-    num_cols = len(STEP_TABLE_HEADERS)
+    ws = wb.create_sheet("Test Pattern")
+    patterns = state.get("test_patterns", {})
 
-    # --- Info header block: label row + value row ---
-    label_row = start_row
-    value_row = start_row + 1
+    precondition_names: List[str] = []
+    action_names: List[str] = []
+    for pattern in patterns.values():
+        for tc in pattern.get("test_cases", []):
+            for name in tc.get("preconditions", {}):
+                if name not in precondition_names:
+                    precondition_names.append(name)
+            for name in tc.get("actions", {}):
+                if name not in action_names:
+                    action_names.append(name)
 
-    for i, label in enumerate(INFO_HEADERS[:-1]):
-        col = i + 1
-        lbl_cell = ws.cell(row=label_row, column=col, value=label)
-        lbl_cell.font = LABEL_FONT
-        lbl_cell.fill = LABEL_FILL
-        lbl_cell.alignment = CENTER
-        lbl_cell.border = THIN_BORDER
+    header = ["Requirement ID", "Test Case No."] + precondition_names + action_names + ["Expected Result"]
+    ws.append(header)
+    _style_header_row(ws, 1, len(header))
 
-        val_cell = ws.cell(row=value_row, column=col, value=tc.get(INFO_FIELD_ORDER[i], ""))
-        val_cell.alignment = WRAP_TOP
-        val_cell.border = THIN_BORDER
+    for req_id, pattern in patterns.items():
+        for tc in pattern.get("test_cases", []):
+            row = [req_id, tc.get("test_case_no", "")]
+            row += [tc.get("preconditions", {}).get(name, "") for name in precondition_names]
+            row += [tc.get("actions", {}).get(name, "") for name in action_names]
+            row.append(tc.get("expected_result", ""))
+            ws.append(row)
 
-    # "Test case Description" label + value span the remaining columns
-    desc_col = len(INFO_HEADERS)
-    desc_label_cell = ws.cell(row=label_row, column=desc_col, value=INFO_HEADERS[-1])
-    desc_label_cell.font = LABEL_FONT
-    desc_label_cell.fill = LABEL_FILL
-    desc_label_cell.alignment = CENTER
-    desc_label_cell.border = THIN_BORDER
-    if num_cols > desc_col:
-        ws.merge_cells(start_row=label_row, start_column=desc_col, end_row=label_row, end_column=num_cols)
-
-    desc_value_cell = ws.cell(row=value_row, column=desc_col, value=tc.get("description", ""))
-    desc_value_cell.alignment = WRAP_TOP
-    desc_value_cell.border = THIN_BORDER
-    if num_cols > desc_col:
-        ws.merge_cells(start_row=value_row, start_column=desc_col, end_row=value_row, end_column=num_cols)
-    ws.row_dimensions[value_row].height = 60
-
-    # --- Step table header ---
-    table_header_row = value_row + 1
-    _set_header_row(ws, table_header_row, STEP_TABLE_HEADERS)
-
-    # --- Step rows, with Test Phase merged per contiguous phase group ---
-    steps = tc.get("steps") or []
-    first_data_row = table_header_row + 1
-    row = first_data_row
-    phase_start_row = None
-    phase_value = None
-
-    def _close_phase_merge(end_row):
-        if phase_start_row is not None and end_row > phase_start_row:
-            ws.merge_cells(start_row=phase_start_row, start_column=1, end_row=end_row, end_column=1)
-
-    for step in steps:
-        for i, field in enumerate(STEP_FIELD_ORDER):
-            col = i + 1
-            if field == "phase":
-                continue  # written separately below to control merging
-            cell = ws.cell(row=row, column=col, value=step.get(field, ""))
-            cell.border = THIN_BORDER
-            cell.alignment = WRAP_TOP if field in ("test_step", "remarks") else Alignment(vertical="top")
-
-        current_phase = step.get("phase", "")
-        if current_phase != phase_value:
-            _close_phase_merge(row - 1)
-            phase_start_row = row
-            phase_value = current_phase
-        phase_cell = ws.cell(row=row, column=1, value=phase_value if row == phase_start_row else None)
-        phase_cell.alignment = CENTER
-        phase_cell.border = THIN_BORDER
-        phase_cell.font = LABEL_FONT
-
-        row += 1
-
-    _close_phase_merge(row - 1)
-
-    return row + 1  # one blank row between test case blocks
+    for col in range(1, len(header) + 1):
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = 18
 
 
-def write_test_cases_sheet(wb: Workbook, test_cases: List[Dict[str, Any]]) -> None:
-    """Write the 'Test Cases' sheet - one block per test case, stacked vertically"""
+def _write_item_list(wb: Workbook, test_cases: List[Dict[str, Any]]) -> None:
+    ws = wb.create_sheet("Item List")
+    ws.append(_ITEM_LIST_COLUMNS)
+    _style_header_row(ws, 1, len(_ITEM_LIST_COLUMNS))
+
+    for i, tc in enumerate(test_cases, start=1):
+        ws.append([
+            i,
+            tc.get("test_type", "Normal_system"),
+            tc.get("feature", ""),
+            tc.get("test_case_id", ""),
+            tc.get("variant", ""),
+            "Yes" if tc.get("steps") else "",
+            tc.get("remarks_summary", ""),
+        ])
+
+    widths = [12, 16, 20, 16, 10, 16, 40]
+    for col, width in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = width
+
+
+def _write_configurable_parameters(wb: Workbook, feature_details: Dict[str, Any]) -> None:
+    """
+    Best-effort adaptation: work_28 sources this from a dedicated
+    app_param_valid list with per-variant columns (A1/A2/B/C1/...). This
+    pipeline's Node 4 instead stores App Parameter rows inside
+    feature_details keyed by f"{sheet_name}_{header_value}" with dynamic
+    column names, so per-variant columns aren't separately resolved here -
+    only Parameter Name + a best-guess Description column are populated.
+    """
+    ws = wb.create_sheet("Configurable Parameters")
+    header = ["Parameter Name", "Description", "A1", "A2", "B", "C1", "C2", "C3", "D1", "D2"]
+    ws.append(header)
+    _style_header_row(ws, 1, len(header))
+
+    seen = set()
+    for entry in feature_details.values():
+        if not isinstance(entry, dict) or "header_value" not in entry:
+            continue  # not a Node 4 App Parameter entry
+        name = str(entry.get("header_value", "")).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        description = next(
+            (str(v) for k, v in entry.items() if "desc" in str(k).lower() and v), ""
+        )
+        ws.append([name, description, "", "", "", "", "", "", "", ""])
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 60
+
+
+def _write_test_cases(wb: Workbook, test_cases: List[Dict[str, Any]]) -> None:
+    """
+    One row per step. Columns 1-7 (metadata) and the Test Phase column (8)
+    are merged vertically across a test case's / phase's rows rather than
+    repeated on every row. One blank row is left between consecutive test
+    cases. A test case with no steps yet (nothing generated) is skipped.
+    """
     ws = wb.create_sheet("Test Cases")
+    ws.append(_TEST_CASE_COLUMNS)
+    _style_header_row(ws, 1, len(_TEST_CASE_COLUMNS))
 
-    for col in range(1, len(STEP_TABLE_HEADERS) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 24
-    ws.column_dimensions[get_column_letter(3)].width = 45  # Test steps
-    ws.column_dimensions[get_column_letter(len(STEP_TABLE_HEADERS))].width = 40  # Remarks
-
-    row = 1
+    row_idx = 2
     for tc in test_cases:
-        row = _write_test_case_block(ws, row, tc)
+        steps = tc.get("steps") or []
+        if not steps:
+            continue
+        block_start = row_idx
+
+        phase_start = row_idx
+        current_phase = steps[0].get("phase", "")
+        for step in steps:
+            if step.get("phase", "") != current_phase:
+                ws.merge_cells(start_row=phase_start, start_column=8, end_row=row_idx - 1, end_column=8)
+                ws.cell(row=phase_start, column=8, value=current_phase)
+                current_phase = step.get("phase", "")
+                phase_start = row_idx
+
+            ws.cell(row=row_idx, column=9, value=step.get("step_no", ""))
+            ws.cell(row=row_idx, column=10, value=step.get("step_text", ""))
+            ws.cell(row=row_idx, column=11, value=step.get("parameter_settings", "") or "")
+            ws.cell(row=row_idx, column=12, value=step.get("units", "") or "")
+            ws.cell(row=row_idx, column=13, value=step.get("expected_value", "") or "")
+            ws.cell(row=row_idx, column=14, value=step.get("units2", "") or "")
+            ws.cell(row=row_idx, column=15, value=step.get("whether_execute", "Yes"))
+            ws.cell(row=row_idx, column=16, value=step.get("remarks", "") or "")
+            row_idx += 1
+
+        ws.merge_cells(start_row=phase_start, start_column=8, end_row=row_idx - 1, end_column=8)
+        ws.cell(row=phase_start, column=8, value=current_phase)
+
+        block_end = row_idx - 1
+        if block_end > block_start:
+            for col in range(1, 8):
+                ws.merge_cells(start_row=block_start, start_column=col, end_row=block_end, end_column=col)
+        ws.cell(row=block_start, column=1, value=tc.get("test_case_id", ""))
+        ws.cell(row=block_start, column=2, value=tc.get("feature", ""))
+        ws.cell(row=block_start, column=3, value=tc.get("variant", "") or "")
+        ws.cell(row=block_start, column=4, value=", ".join(tc.get("requirement_ids", [])))
+        ws.cell(row=block_start, column=5, value=tc.get("priority", "") or "")
+        ws.cell(row=block_start, column=6, value=tc.get("mode_of_execution", "Automated"))
+        description = tc.get("description", "")
+        if tc.get("status") == "flagged" and tc.get("flag_reason"):
+            description = f"{description}\n[FLAGGED FOR REVIEW: {tc['flag_reason']}]"
+        ws.cell(row=block_start, column=7, value=description).alignment = _TOP_ALIGN
+
+        row_idx += 1  # one blank row between consecutive test cases
+
+    widths = [16, 16, 10, 20, 10, 16, 40, 14, 6, 40, 18, 8, 18, 8, 12, 30]
+    for col, width in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = width
 
 
-def write_test_cases_workbook(
-    output_path: str,
-    test_cases: List[Dict[str, Any]],
-    include_cover: bool = False,
-) -> None:
+def _normalize_test_cases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Build the full workbook (Item_List + Test Cases sheets) and save it to
-    output_path. include_cover is a placeholder for a future "Cover" /
-    "Test Platform" sheet - not implemented yet.
+    Build the flat list write_test_cases_workbook's sheet writers expect,
+    from state["test_cases"] (dict keyed by req_id) + state["requirements"].
+    Falls back to the requirement's own description/req_id when nothing has
+    been generated yet, so Item List / Test Cases still get a usable row.
     """
+    requirements_by_id = {req.get("req_id"): req for req in state.get("requirements", [])}
+    normalized = []
+    for req_id, entry in state.get("test_cases", {}).items():
+        generated = entry.get("generated_output") or {}
+        requirement = requirements_by_id.get(req_id, {})
+        normalized.append({
+            "test_case_id": generated.get("test_case_id", req_id),
+            "feature": generated.get("feature", ""),
+            "variant": generated.get("variant"),
+            "requirement_ids": generated.get("requirement_ids", [req_id]),
+            "priority": generated.get("priority"),
+            "mode_of_execution": generated.get("mode_of_execution", "Automated"),
+            "description": generated.get("description", requirement.get("data", {}).get("Description", "")),
+            "status": generated.get("status", "clean"),
+            "flag_reason": generated.get("flag_reason"),
+            "remarks_summary": generated.get("remarks_summary"),
+            "test_type": generated.get("test_type", "Normal_system"),
+            "steps": generated.get("steps", []),
+        })
+    return normalized
+
+
+def write_test_cases_workbook(output_path: str, state: Dict[str, Any]) -> None:
+    """
+    Build the full SYS5 output workbook (Cover Page, Test Pattern, Item
+    List, Configurable Parameters, Test Cases) from the pipeline's final
+    state dict and save it to output_path.
+    """
+    config = state.get("config", {})
+    test_cases = _normalize_test_cases(state)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     wb = Workbook()
-    wb.remove(wb.active)  # drop the default blank sheet
-
-    write_item_list_sheet(wb, test_cases)
-    write_test_cases_sheet(wb, test_cases)
+    wb.remove(wb.active)
+    _write_cover_page(wb, state, config)
+    _write_test_pattern(wb, state)
+    _write_item_list(wb, test_cases)
+    _write_configurable_parameters(wb, state.get("feature_details", {}))
+    _write_test_cases(wb, test_cases)
 
     wb.save(output_path)

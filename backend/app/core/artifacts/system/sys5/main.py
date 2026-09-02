@@ -86,24 +86,15 @@ def run_workflow(config: Dict[str, Any]) -> str:
         "timestamp": timestamp
     }
 
-    # Write the Test Cases workbook (Item_List + Test Cases sheets)
+    # Write the SYS5 output workbook (Cover Page/Test Pattern/Item List/
+    # Configurable Parameters/Test Cases), structure matching work_28's
+    # reference xlsx_writer.py
     output_dir = config.get("output_dir")
     abs_output_dir = resolve_path(output_dir) if output_dir else None
-    if abs_output_dir and final_state["test_cases"]:
+    if abs_output_dir:
         ensure_directory_exists(abs_output_dir)
-        test_case_rows = []
-        requirements_by_id = {req.get("req_id"): req for req in final_state["requirements"]}
-        for req_id, entry in final_state["test_cases"].items():
-            requirement = requirements_by_id.get(req_id, {})
-            test_case_rows.append({
-                "test_case_id": req_id,
-                "requirement_id": req_id,
-                "description": requirement.get("data", {}).get("Description", ""),
-                "steps": (entry.get("generated_output") or {}).get("steps", []),
-            })
-
         excel_path = os.path.join(abs_output_dir, f"test_cases_{timestamp}.xlsx")
-        write_test_cases_workbook(excel_path, test_case_rows)
+        write_test_cases_workbook(excel_path, final_state)
         print(f"[LOG] Test Cases workbook saved to: {excel_path}\n")
 
     # Print workflow summary
