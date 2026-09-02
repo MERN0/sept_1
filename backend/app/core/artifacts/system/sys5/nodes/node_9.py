@@ -76,18 +76,24 @@ class Node9CorrectTestCases:
             # Get prompt from agentchain (node_9_correct_test_cases), or use fallback
             prompt = get_prompt_from_agentchain(agentchain, "node_9_correct_test_cases")
             if not prompt:
-                print(f"[LOG] qa_agent prompt not found in agentchain, using fallback\n")
+                print(f"[LOG] node_9_correct_test_cases prompt not found in agentchain, using fallback\n")
                 from ..prompts import build_correct_prompt as fallback_build_correct_prompt
                 prompt = fallback_build_correct_prompt(correct_input)
             else:
                 # Format the prompt template with actual data
                 import json
                 try:
+                    # Get the test case JSON schema from agentchain
+                    json_schema = get_prompt_from_agentchain(agentchain, "test_case_json_schema", "")
+                    if not json_schema:
+                        from ..prompts import _TEST_CASE_JSON_SHAPE
+                        json_schema = _TEST_CASE_JSON_SHAPE
+
                     prompt = prompt.format(
                         generated_output=json.dumps(correct_input.get("generated_output", {}), indent=2, default=str),
                         validation_issues=json.dumps(correct_input.get("validation_result", {}).get("issues", []), indent=2, default=str),
                         feature_bundle=json.dumps(correct_input.get("generate_input", {}).get("feature_bundle", {}), indent=2, default=str),
-                        test_case_json_shape=json.dumps({}, indent=2)
+                        test_case_json_shape=json_schema
                     )
                 except KeyError as fmt_err:
                     print(f"[WARNING] Failed to format prompt template: {fmt_err}, using fallback\n")

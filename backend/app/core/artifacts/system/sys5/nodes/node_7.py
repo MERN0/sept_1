@@ -134,18 +134,24 @@ class Node7GenerateTestCases:
                 # Get prompt from agentchain (node_7_generate_test_cases), or use fallback
                 prompt = get_prompt_from_agentchain(agentchain, "node_7_generate_test_cases")
                 if not prompt:
-                    print(f"[LOG] generation_agent prompt not found in agentchain, using fallback\n")
+                    print(f"[LOG] node_7_generate_test_cases prompt not found in agentchain, using fallback\n")
                     from ..prompts import build_generate_prompt as fallback_build_generate_prompt
                     prompt = fallback_build_generate_prompt(generate_input)
                 else:
                     # Format the prompt template with actual data
                     import json
                     try:
+                        # Get the test case JSON schema from agentchain
+                        json_schema = get_prompt_from_agentchain(agentchain, "test_case_json_schema", "")
+                        if not json_schema:
+                            from ..prompts import _TEST_CASE_JSON_SHAPE
+                            json_schema = _TEST_CASE_JSON_SHAPE
+
                         prompt = prompt.format(
                             requirement=json.dumps(generate_input.get("requirement", {}), indent=2, default=str),
                             test_pattern=json.dumps(generate_input.get("test_pattern", {}), indent=2, default=str),
                             feature_bundle=json.dumps(generate_input.get("feature_bundle", {}), indent=2, default=str),
-                            test_case_json_shape=json.dumps(generate_input.get("test_case_json_shape", ""), indent=2)
+                            test_case_json_shape=json_schema
                         )
                     except KeyError as fmt_err:
                         print(f"[WARNING] Failed to format prompt template: {fmt_err}, using fallback\n")

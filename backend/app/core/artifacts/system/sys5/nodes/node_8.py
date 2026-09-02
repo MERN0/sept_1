@@ -119,7 +119,7 @@ class Node8ValidateTestCases:
             # Get prompt from agentchain (node_8_validate_test_cases), or use fallback
             prompt = get_prompt_from_agentchain(agentchain, "node_8_validate_test_cases")
             if not prompt:
-                print(f"[LOG] verification_agent prompt not found in agentchain, using fallback\n")
+                print(f"[LOG] node_8_validate_test_cases prompt not found in agentchain, using fallback\n")
                 from ..prompts import build_validate_prompt as fallback_build_validate_prompt
                 prompt = fallback_build_validate_prompt(validate_input)
             else:
