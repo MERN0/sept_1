@@ -12,13 +12,15 @@ try:
     from ..config import get_llm
     from ..prompts import build_validate_input, build_validate_prompt
     from ..schema import parse_and_validate_validation_result
-    from ..utils import check_step_grounding, check_enum_parameter_usage
+    from ..utils import check_step_grounding, check_enum_parameter_usage, check_remarks_present
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
     from backend.app.core.artifacts.system.sys5.prompts import build_validate_input, build_validate_prompt
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_validation_result
-    from backend.app.core.artifacts.system.sys5.utils import check_step_grounding, check_enum_parameter_usage
+    from backend.app.core.artifacts.system.sys5.utils import (
+        check_step_grounding, check_enum_parameter_usage, check_remarks_present
+    )
 
 
 class Node8ValidateTestCases:
@@ -35,7 +37,9 @@ class Node8ValidateTestCases:
        model_input_mapping signal, parameter_settings must hold the
        human-readable test_case_input value (e.g. "FWD", "ON"), not the
        internal numeric model_input code, and not be misplaced into units.
-    3. The LLM Validate prompt (prompts.py), for everything the deterministic
+    3. A deterministic remarks check: every step must carry a non-empty
+       remarks value - it is not optional.
+    4. The LLM Validate prompt (prompts.py), for everything the deterministic
        checks can't see (phase ordering, coverage of the test pattern, etc).
 
     Either source failing marks the test case invalid. Sets
@@ -82,9 +86,15 @@ class Node8ValidateTestCases:
                 print(f"[LOG] {req_id}: enum parameter check found {len(enum_issues)} issue(s): "
                       f"{enum_issues}\n")
 
-            deterministic_issues = grounding_issues + enum_issues
+            # 3. Deterministic remarks check - every step must have one, not optional
+            remarks_issues = check_remarks_present(steps)
+            if remarks_issues:
+                print(f"[LOG] {req_id}: remarks check found {len(remarks_issues)} issue(s): "
+                      f"{remarks_issues}\n")
 
-            # 3. LLM Validate prompt for everything the deterministic checks can't see
+            deterministic_issues = grounding_issues + enum_issues + remarks_issues
+
+            # 4. LLM Validate prompt for everything the deterministic checks can't see
             validate_input = build_validate_input(entry.get("generate_input", {}), generated_output)
             prompt = build_validate_prompt(validate_input)
 

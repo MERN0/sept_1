@@ -256,3 +256,24 @@ def check_enum_parameter_usage(steps: List[Dict[str, Any]], feature_bundle: Dict
             )
 
     return issues
+
+
+def check_remarks_present(steps: List[Dict[str, Any]]) -> List[str]:
+    """
+    Every step must carry a non-empty "remarks" - it is not an optional
+    field. schema.py's TestStep keeps remarks Optional so a response missing
+    it still parses (a full generate_failed on a single missing remark would
+    be too disruptive), and this deterministic check instead flags any step
+    without one so the Validate -> Correct loop fills it in, the same
+    "trust code over prompt wording" pattern used for grounding and enum
+    checks.
+    """
+    issues = []
+    for step in steps:
+        remarks = step.get("remarks")
+        if remarks is None or not str(remarks).strip():
+            issues.append(
+                f"Step {step.get('step_no', '?')}: '{step.get('step_text', '')}' is missing remarks - "
+                f"every step must include a remark explaining what it does or why"
+            )
+    return issues

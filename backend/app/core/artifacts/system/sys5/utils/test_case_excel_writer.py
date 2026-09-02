@@ -247,12 +247,28 @@ def _feature_name_for(req_id: str, feature_index: Dict[str, Any], fallback: str)
     (state["feature_index"], Node 1), never the LLM-generated value - only
     fall back to whatever Generate produced if the requirement's feature
     number can't be resolved in the index at all (e.g. no Index sheet).
+
+    Every miss is logged with the reason (no 3-digit number in req_id, vs.
+    a number that didn't match any Index sheet key) - Node 1 already logs
+    what it parsed out of the Index sheet, so pairing that with what this
+    lookup saw for each req_id makes a mismatch (e.g. a req_id whose digits
+    don't line up with the Index sheet's Feature Number) immediately
+    diagnosable from the run output instead of a silently blank/fallback
+    Feature column.
     """
     match = re.search(r'(\d{3})', req_id or "")
-    if match:
-        entry = feature_index.get(match.group(1))
-        if entry and entry.get("feature_name"):
-            return entry["feature_name"]
+    if not match:
+        print(f"[LOG] Feature lookup for '{req_id}': no 3-digit feature number found in the requirement id - "
+              f"falling back to Generate's own feature value\n")
+        return fallback
+
+    entry = feature_index.get(match.group(1))
+    if entry and entry.get("feature_name"):
+        return entry["feature_name"]
+
+    print(f"[LOG] Feature lookup for '{req_id}': extracted feature number '{match.group(1)}' but it's not a key "
+          f"in the Index sheet's feature_index ({sorted(feature_index.keys())}) - falling back to Generate's own "
+          f"feature value\n")
     return fallback
 
 

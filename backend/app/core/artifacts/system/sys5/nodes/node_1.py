@@ -41,44 +41,103 @@ class Node1ExtractRequirements:
     """
 
     @staticmethod
-    def _find_column(df, target_name: str):
-        """Case/whitespace-tolerant column lookup, e.g. 'feature number' matches
-        'Feature Number', ' Feature Number ', 'FEATURE_NUMBER', etc."""
-        target_normalized = target_name.strip().lower().replace('_', ' ')
+    def _find_column(df, *target_names: str):
+        """Case/whitespace-tolerant column lookup against one or more accepted
+        spellings, e.g. 'feature number'/'feature no' both match 'Feature Number',
+        ' Feature No. ', 'FEATURE_NUMBER', 'FeatureNo', etc."""
+        targets_normalized = {t.strip().lower().replace('_', ' ').replace('.', '').replace('#', '')
+                               for t in target_names}
         for col in df.columns:
-            if str(col).strip().lower().replace('_', ' ') == target_normalized:
+            col_normalized = str(col).strip().lower().replace('_', ' ').replace('.', '').replace('#', '')
+            if col_normalized in targets_normalized:
                 return col
         return None
 
     @staticmethod
+    def _find_sheet_name(excel_path: str, target_name: str):
+        """Case/whitespace-tolerant sheet name lookup, e.g. 'index' matches
+        'Index', ' INDEX ', 'Index '. Returns (actual_sheet_name, all_sheet_names)
+        - all_sheet_names is always returned so the caller can log it even when
+        no match is found."""
+        excel_file = pd.ExcelFile(excel_path)
+        all_sheets = excel_file.sheet_names
+        target_normalized = target_name.strip().lower()
+        for sheet in all_sheets:
+            if str(sheet).strip().lower() == target_normalized:
+                return sheet, all_sheets
+        return None, all_sheets
+
+    @staticmethod
+    def _locate_header_row(excel_path: str, sheet_name: str, required_terms=("feature", "number")):
+        """
+        Find which row of the sheet actually holds the column headers, in
+        case a title/merged banner row sits above the real header (a layout
+        Node 5/6 already had to handle for their sheets) - reading with the
+        default header=0 would then pick up the title as "columns" and every
+        tolerant name lookup below it would fail to find anything. Scans the
+        first 10 raw rows for one containing a cell whose normalized text
+        contains all of required_terms (e.g. "feature" and "number"/"no"),
+        and returns that row's 0-based index; defaults to 0 (the normal case)
+        if no such row is found so unaffected sheets are unchanged.
+        """
+        raw = pd.read_excel(excel_path, sheet_name=sheet_name, header=None, nrows=10)
+        for row_idx in range(len(raw)):
+            for cell in raw.iloc[row_idx]:
+                if pd.isna(cell):
+                    continue
+                normalized = str(cell).strip().lower().replace('_', ' ').replace('.', '')
+                if all(term in normalized for term in required_terms):
+                    return row_idx
+        return 0
+
+    @staticmethod
     def _extract_feature_index(excel_path: str) -> Dict[str, Any]:
         """
-        Read the "Index" sheet (Feature Number | Feature Name | Feature
-        Group) and return {padded_feature_number: {feature_name,
-        feature_group}}, e.g. "019" -> {...}. Feature Number is normalized
-        to the same 3-digit zero-padded string format everywhere else in
-        this pipeline derives it from a req_id (re.search(r'(\\d{3})', req_id)):
-        the digits are extracted from whatever the cell contains (a bare int
-        19, a numeric string "019", or a prefixed code like "FR019" - since
-        req_id itself can carry that same "FR" style prefix) rather than
-        assuming a clean int conversion, so the key always ends up as pure
-        digits and actually matches the req_id-derived lookup.
-        Returns {} if there's no Index sheet - it's supplementary, not a
-        hard requirement for extraction to proceed.
+        Read the Index sheet (Feature Number | Feature Name | Feature Group)
+        and return {padded_feature_number: {feature_name, feature_group}},
+        e.g. "019" -> {...}. Feature Number is normalized to the same 3-digit
+        zero-padded string format everywhere else in this pipeline derives it
+        from a req_id (re.search(r'(\\d{3})', req_id)): the digits are
+        extracted from whatever the cell contains (a bare int 19, a numeric
+        string "019", or a prefixed code like "FR019" - since req_id itself
+        can carry that same "FR" style prefix) rather than assuming a clean
+        int conversion, so the key always ends up as pure digits and actually
+        matches the req_id-derived lookup.
+
+        Every failure mode here used to fall through a bare `except: return
+        {}` with zero logging, unlike every other sheet lookup in this
+        pipeline (Nodes 2-6 all print the sheets/columns they found when a
+        lookup fails) - that silence is exactly why a wrong sheet name, a
+        title row above the real header, or a differently-worded column
+        header would previously fail with no trace at all. Every branch here
+        now logs what it found so a real failure is diagnosable from the run
+        output instead of just silently producing an empty Feature column.
         """
-        try:
-            index_df = pd.read_excel(excel_path, sheet_name="Index")
-        except Exception:
+        sheet_name, all_sheets = Node1ExtractRequirements._find_sheet_name(excel_path, "Index")
+        if sheet_name is None:
+            print(f"[LOG] No 'Index' sheet found (feature names will fall back to Generate's own value). "
+                  f"Available sheets: {all_sheets}\n")
             return {}
 
-        number_col = Node1ExtractRequirements._find_column(index_df, "Feature Number")
+        header_row = Node1ExtractRequirements._locate_header_row(excel_path, sheet_name)
+        index_df = pd.read_excel(excel_path, sheet_name=sheet_name, header=header_row)
+        print(f"[LOG] Index sheet found: '{sheet_name}' (header row {header_row}), "
+              f"columns: {list(index_df.columns)}\n")
+
+        number_col = Node1ExtractRequirements._find_column(
+            index_df, "Feature Number", "Feature No", "Feature Id", "Feature Num"
+        )
         name_col = Node1ExtractRequirements._find_column(index_df, "Feature Name")
         group_col = Node1ExtractRequirements._find_column(index_df, "Feature Group")
 
         if number_col is None:
+            print(f"[LOG] Index sheet has no recognizable Feature Number column "
+                  f"(feature names will fall back to Generate's own value). Columns found: "
+                  f"{list(index_df.columns)}\n")
             return {}
 
         feature_index = {}
+        skipped_rows = 0
         for _, row in index_df.iterrows():
             raw_number = row.get(number_col)
             if pd.isna(raw_number):
@@ -86,6 +145,7 @@ class Node1ExtractRequirements:
 
             digits_match = re.search(r'(\d+)', str(raw_number))
             if not digits_match:
+                skipped_rows += 1
                 continue
             padded = digits_match.group(1).zfill(3)
 
@@ -97,6 +157,10 @@ class Node1ExtractRequirements:
                     None if group_col is None or pd.isna(row.get(group_col)) else str(row.get(group_col)).strip()
                 ),
             }
+
+        if skipped_rows:
+            print(f"[LOG] Index sheet: {skipped_rows} row(s) had a Feature Number cell with no digits - skipped\n")
+        print(f"[LOG] Index sheet parsed: {len(feature_index)} feature(s) -> keys {sorted(feature_index.keys())}\n")
         return feature_index
 
     @staticmethod

@@ -14,7 +14,9 @@ from .memory_store import (
 )
 from .data_cleaning import drop_empty_values
 from .test_case_excel_writer import write_test_cases_workbook
-from .grounding_check import check_step_grounding, check_enum_parameter_usage, collect_known_names
+from .grounding_check import (
+    check_step_grounding, check_enum_parameter_usage, check_remarks_present, collect_known_names
+)
 
 __all__ = [
     'resolve_path',
@@ -30,5 +32,6 @@ __all__ = [
     'write_test_cases_workbook',
     'check_step_grounding',
     'check_enum_parameter_usage',
+    'check_remarks_present',
     'collect_known_names'
 ]

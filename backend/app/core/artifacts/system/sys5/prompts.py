@@ -35,7 +35,7 @@ _TEST_CASE_JSON_SHAPE = """{
       "expected_value": "assertion value/condition for Verify/Wait_Until, e.g. '1' or '>5' - or null",
       "units2": "unit for expected_value, or null",
       "whether_execute": "Yes",
-      "remarks": "string or null"
+      "remarks": "string, REQUIRED for every step - never null or empty - a short remark explaining what this step does or why it's needed"
     }
   ]
 }"""
@@ -94,7 +94,10 @@ MANDATORY RULES:
    operator, or a tolerance that appears in the tolerances data given below.
 5. Prefer the current requirement/test pattern's own values over any stale remark text if they
    conflict.
-6. Steps must be ordered PRECONDITION, then ACTION, then POSTCONDITION."""
+6. Steps must be ordered PRECONDITION, then ACTION, then POSTCONDITION.
+7. "remarks" is REQUIRED on every single step - never null, never an empty string. State briefly
+   what the step does or why it's there (e.g. "sets baseline speed before applying the ramp",
+   "confirms motor returns to idle after the test")."""
 
 
 def build_generate_input(
@@ -179,7 +182,8 @@ POSTCONDITION, (6) the test pattern's preconditions/actions/expected_result are 
 (7) for a Set step whose signal is in model_input_mapping, parameter_settings holds the
 human-readable test_case_input value (e.g. "FWD", "P", "NL", "ON") - flag it if the numeric
 model_input code was used instead, or if that value was placed in "units" instead of
-parameter_settings.
+parameter_settings, (8) every step has a non-empty "remarks" - flag any step where it's missing,
+null, or blank.
 
 Output ONLY valid JSON, no extra text:
 {{"valid": true or false, "issues": ["short description of each problem found"]}}"""
