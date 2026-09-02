@@ -259,18 +259,25 @@ def _feature_name_for(req_id: str, feature_index: Dict[str, Any], fallback: str)
 def _normalize_test_cases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Build the flat list write_test_cases_workbook's sheet writers expect,
-    from state["test_cases"] (dict keyed by req_id) + state["requirements"].
-    Falls back to the requirement's own description/req_id when nothing has
-    been generated yet, so Item List / Test Cases still get a usable row.
+    from state["test_cases"] (dict keyed by "{req_id}_{pattern_no}", one
+    entry per generated test case - a requirement can have several, one per
+    test pattern entry) + state["requirements"]. Falls back to the
+    requirement's own description/req_id when nothing has been generated
+    yet, so Item List / Test Cases still get a usable row.
+
+    The dict key is no longer the req_id itself (Node 7 makes one test case
+    per test pattern entry, not one per requirement), so the real req_id is
+    read from entry["req_id"] rather than parsed back out of the key.
     """
     requirements_by_id = {req.get("req_id"): req for req in state.get("requirements", [])}
     feature_index = state.get("feature_index", {})
     normalized = []
-    for req_id, entry in state.get("test_cases", {}).items():
+    for key, entry in state.get("test_cases", {}).items():
         generated = entry.get("generated_output") or {}
+        req_id = entry.get("req_id", key)
         requirement = requirements_by_id.get(req_id, {})
         normalized.append({
-            "test_case_id": generated.get("test_case_id", req_id),
+            "test_case_id": generated.get("test_case_id") or entry.get("test_case_id", key),
             "feature": _feature_name_for(req_id, feature_index, generated.get("feature", "")),
             "variant": generated.get("variant"),
             "requirement_ids": generated.get("requirement_ids", [req_id]),

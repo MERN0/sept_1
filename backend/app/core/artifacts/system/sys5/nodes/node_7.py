@@ -24,13 +24,27 @@ except ImportError:
 
 class Node7GenerateTestCases:
     """
-    Node 7: Generate a test case per test pattern (one at a time).
+    Node 7: Generate a test case per test pattern entry (one at a time).
 
-    For each requirement's test pattern, bundles together the requirement,
-    the test pattern, and the relevant feature data (feature_details +
-    model_input_mapping/tolerances/compound_commands/library_list from
-    model_config) into a single input, sends it to the LLM via the Generate
-    prompt (prompts.py), and stores the parsed test case JSON.
+    Node 1 generates test_patterns[req_id] = {"test_cases": [...], "factors":
+    {...}, "summary": ...} - a LIST of distinct precondition/action
+    combinations per requirement, not a single pattern. Each entry in that
+    list must produce its own generated test case; only iterating the outer
+    per-requirement dict (as this node used to) silently generates just one
+    test case per requirement and drops the rest of the list.
+
+    For each individual test pattern entry, bundles together the
+    requirement, that one pattern entry, and the relevant feature data
+    (feature_details + model_input_mapping/tolerances/compound_commands/
+    library_list from model_config) into a single input, sends it to the
+    LLM via the Generate prompt (prompts.py), and stores the parsed test
+    case JSON under a key unique to that (requirement, pattern) pair.
+
+    Each generated test case is assigned a canonical, globally unique
+    "TC_TMHC_<NNN>" id (sequential, zero-padded) in code rather than trusting
+    whatever id the LLM happens to put in its JSON - this is the single
+    standard both the Item List and Test Cases sheets read, so the two
+    sheets can never disagree on a test case's id.
     """
 
     @staticmethod
@@ -69,6 +83,7 @@ class Node7GenerateTestCases:
 
         requirements_by_id = {req.get("req_id"): req for req in requirements}
         test_cases = dict(state.get("test_cases") or {})
+        test_case_counter = 0
 
         try:
             llm = get_llm()
@@ -80,7 +95,10 @@ class Node7GenerateTestCases:
             return state
 
         for req_id, test_pattern in test_patterns.items():
-            print(f"[LOG] Processing test pattern for {req_id} (1 at a time)...")
+            pattern_entries = (test_pattern or {}).get("test_cases") or []
+            if not pattern_entries:
+                print(f"[LOG] {req_id}: no test pattern entries to generate from, skipping\n")
+                continue
 
             requirement = requirements_by_id.get(req_id, {})
             feature_number = Node7GenerateTestCases._feature_number(req_id)
@@ -94,28 +112,38 @@ class Node7GenerateTestCases:
             }
             feature_bundle = drop_empty_values(feature_bundle)
 
-            generate_input = build_generate_input(requirement, test_pattern, feature_bundle)
-            prompt = build_generate_prompt(generate_input)
+            print(f"[LOG] Processing {len(pattern_entries)} test pattern entry(ies) for {req_id}...")
 
-            try:
-                response = llm.invoke(prompt)
-                generated_output = parse_and_validate_test_case(response.content)
-                status = "generated"
-                print(f"[LOG] Generated test case {generated_output.get('test_case_id', req_id)} "
-                      f"with {len(generated_output.get('steps', []))} steps\n")
-            except Exception as e:
-                print(f"[WARNING] Generate failed for {req_id}: {str(e)}\n")
-                generated_output = None
-                status = "generate_failed"
+            for pattern_entry in pattern_entries:
+                pattern_no = pattern_entry.get("test_case_no", test_case_counter + 1)
+                entry_key = f"{req_id}_{pattern_no}"
+                test_case_counter += 1
+                test_case_id = f"TC_TMHC_{test_case_counter:03d}"
 
-            test_cases[req_id] = {
-                "req_id": req_id,
-                "generate_input": generate_input,
-                "generated_output": generated_output,
-                "validation_result": None,
-                "correction_count": 0,
-                "status": status,
-            }
+                generate_input = build_generate_input(requirement, pattern_entry, feature_bundle)
+                prompt = build_generate_prompt(generate_input)
+
+                try:
+                    response = llm.invoke(prompt)
+                    generated_output = parse_and_validate_test_case(response.content)
+                    generated_output["test_case_id"] = test_case_id
+                    status = "generated"
+                    print(f"[LOG] Generated test case {test_case_id} for {req_id} (pattern #{pattern_no}) "
+                          f"with {len(generated_output.get('steps', []))} steps\n")
+                except Exception as e:
+                    print(f"[WARNING] Generate failed for {req_id} pattern #{pattern_no}: {str(e)}\n")
+                    generated_output = None
+                    status = "generate_failed"
+
+                test_cases[entry_key] = {
+                    "req_id": req_id,
+                    "test_case_id": test_case_id,
+                    "generate_input": generate_input,
+                    "generated_output": generated_output,
+                    "validation_result": None,
+                    "correction_count": 0,
+                    "status": status,
+                }
 
         state["test_cases"] = test_cases
         state["errors"] = errors

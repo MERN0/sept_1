@@ -71,6 +71,13 @@ class Node9CorrectTestCases:
             try:
                 response = llm.invoke(prompt)
                 corrected_output = parse_and_validate_test_case(response.content)
+                # Correct must never drift the canonical id assigned in Node 7 -
+                # it's the single standard the Item List and Test Cases sheets
+                # both key off of, so re-assert it regardless of what the LLM
+                # put in its corrected JSON.
+                canonical_id = entry.get("test_case_id")
+                if canonical_id:
+                    corrected_output["test_case_id"] = canonical_id
                 entry["generated_output"] = corrected_output
                 entry["status"] = "corrected"
                 print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
