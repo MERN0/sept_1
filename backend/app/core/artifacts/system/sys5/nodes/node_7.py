@@ -131,8 +131,8 @@ class Node7GenerateTestCases:
 
                 generate_input = build_generate_input(requirement, pattern_entry, feature_bundle)
 
-                # Get prompt from agentchain (generation_agent), or use fallback
-                prompt = get_prompt_from_agentchain(agentchain, "generation_agent")
+                # Get prompt from agentchain (node_7_generate_test_cases), or use fallback
+                prompt = get_prompt_from_agentchain(agentchain, "node_7_generate_test_cases")
                 if not prompt:
                     print(f"[LOG] generation_agent prompt not found in agentchain, using fallback\n")
                     from ..prompts import build_generate_prompt as fallback_build_generate_prompt

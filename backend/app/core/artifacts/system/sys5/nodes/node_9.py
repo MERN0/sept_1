@@ -73,8 +73,8 @@ class Node9CorrectTestCases:
                 entry.get("generate_input", {}), entry.get("generated_output"), validation_result
             )
 
-            # Get prompt from agentchain (qa_agent), or use fallback
-            prompt = get_prompt_from_agentchain(agentchain, "qa_agent")
+            # Get prompt from agentchain (node_9_correct_test_cases), or use fallback
+            prompt = get_prompt_from_agentchain(agentchain, "node_9_correct_test_cases")
             if not prompt:
                 print(f"[LOG] qa_agent prompt not found in agentchain, using fallback\n")
                 from ..prompts import build_correct_prompt as fallback_build_correct_prompt

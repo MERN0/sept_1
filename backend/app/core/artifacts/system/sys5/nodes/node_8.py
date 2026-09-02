@@ -116,8 +116,8 @@ class Node8ValidateTestCases:
             # 5. LLM Validate prompt for everything the deterministic checks can't see
             validate_input = build_validate_input(entry.get("generate_input", {}), generated_output)
 
-            # Get prompt from agentchain (verification_agent), or use fallback
-            prompt = get_prompt_from_agentchain(agentchain, "verification_agent")
+            # Get prompt from agentchain (node_8_validate_test_cases), or use fallback
+            prompt = get_prompt_from_agentchain(agentchain, "node_8_validate_test_cases")
             if not prompt:
                 print(f"[LOG] verification_agent prompt not found in agentchain, using fallback\n")
                 from ..prompts import build_validate_prompt as fallback_build_validate_prompt
