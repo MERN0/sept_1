@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import traceback
 
 _workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
 if _workspace_root not in sys.path:
@@ -126,19 +127,33 @@ class Node7GenerateTestCases:
                 try:
                     response = llm.invoke(prompt)
                     generated_output = parse_and_validate_test_case(response.content)
-                    generated_output["test_case_id"] = test_case_id
-                    generated_output["steps"], bookend_fixes = ensure_test_start_end(
-                        generated_output.get("steps", [])
-                    )
                     status = "generated"
-                    print(f"[LOG] Generated test case {test_case_id} for {req_id} (pattern #{pattern_no}) "
-                          f"with {len(generated_output.get('steps', []))} steps\n")
-                    if bookend_fixes:
-                        print(f"[LOG] {test_case_id}: {'; '.join(bookend_fixes)}\n")
                 except Exception as e:
                     print(f"[WARNING] Generate failed for {req_id} pattern #{pattern_no}: {str(e)}\n")
+                    print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}\n")
                     generated_output = None
                     status = "generate_failed"
+
+                if generated_output is not None:
+                    generated_output["test_case_id"] = test_case_id
+                    # A failure here must never discard an otherwise-successful
+                    # generation - this is a best-effort mechanical fix-up, not
+                    # part of what makes a test case valid, so on any error it
+                    # just leaves the LLM's own steps as-is rather than losing
+                    # the whole test case.
+                    try:
+                        generated_output["steps"], bookend_fixes = ensure_test_start_end(
+                            generated_output.get("steps", [])
+                        )
+                        if bookend_fixes:
+                            print(f"[LOG] {test_case_id}: {'; '.join(bookend_fixes)}\n")
+                    except Exception as norm_error:
+                        print(f"[WARNING] {test_case_id}: Test_Start/End_of_test normalization failed "
+                              f"({str(norm_error)}) - keeping the generated steps as-is\n")
+                        print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}\n")
+
+                    print(f"[LOG] Generated test case {test_case_id} for {req_id} (pattern #{pattern_no}) "
+                          f"with {len(generated_output.get('steps', []))} steps\n")
 
                 test_cases[entry_key] = {
                     "req_id": req_id,

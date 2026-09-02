@@ -2,6 +2,7 @@
 
 import os
 import sys
+import traceback
 
 _workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
 if _workspace_root not in sys.path:
@@ -73,24 +74,40 @@ class Node9CorrectTestCases:
             try:
                 response = llm.invoke(prompt)
                 corrected_output = parse_and_validate_test_case(response.content)
-                # Correct must never drift the canonical id assigned in Node 7 -
-                # it's the single standard the Item List and Test Cases sheets
-                # both key off of, so re-assert it regardless of what the LLM
-                # put in its corrected JSON.
-                canonical_id = entry.get("test_case_id")
-                if canonical_id:
-                    corrected_output["test_case_id"] = canonical_id
+            except Exception as e:
+                print(f"[WARNING] Correct failed for {req_id}: {str(e)}\n")
+                print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}\n")
+                entry["status"] = "correct_failed"
+                entry["correction_count"] = entry.get("correction_count", 0) + 1
+                continue
+
+            # Correct must never drift the canonical id assigned in Node 7 -
+            # it's the single standard the Item List and Test Cases sheets
+            # both key off of, so re-assert it regardless of what the LLM
+            # put in its corrected JSON.
+            canonical_id = entry.get("test_case_id")
+            if canonical_id:
+                corrected_output["test_case_id"] = canonical_id
+
+            # A failure here must never discard an otherwise-successful
+            # correction - this is a best-effort mechanical fix-up, not part
+            # of what makes a corrected test case valid, so on any error it
+            # just keeps the LLM's own corrected steps as-is.
+            try:
                 corrected_output["steps"], bookend_fixes = ensure_test_start_end(
                     corrected_output.get("steps", [])
                 )
-                entry["generated_output"] = corrected_output
-                entry["status"] = "corrected"
-                print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
-                if bookend_fixes:
-                    print(f"[LOG] {req_id}: {'; '.join(bookend_fixes)}\n")
-            except Exception as e:
-                print(f"[WARNING] Correct failed for {req_id}: {str(e)}\n")
-                entry["status"] = "correct_failed"
+            except Exception as norm_error:
+                bookend_fixes = []
+                print(f"[WARNING] {req_id}: Test_Start/End_of_test normalization failed "
+                      f"({str(norm_error)}) - keeping the corrected steps as-is\n")
+                print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}\n")
+
+            entry["generated_output"] = corrected_output
+            entry["status"] = "corrected"
+            print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
+            if bookend_fixes:
+                print(f"[LOG] {req_id}: {'; '.join(bookend_fixes)}\n")
 
             entry["correction_count"] = entry.get("correction_count", 0) + 1
 
