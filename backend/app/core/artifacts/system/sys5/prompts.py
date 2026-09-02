@@ -80,12 +80,16 @@ MANDATORY RULES:
 3. Resolve any scenario-parameter-to-signal/model-input dependency (e.g. a size/mode/direction
    factor implying a particular model input, map, or load value) using the model_input_mapping
    data given below - do not infer such a mapping yourself if it isn't explicitly present there.
-3a. Each model_input_mapping row has a human-readable "test_case_input" (e.g. "FWD", "BWD", "P",
-    "S", "E", "NL", "FL", "ON", "OFF") AND a separate internal numeric "model_input" code (e.g.
-    1, 2, 3) for that same row. For a Set step, parameter_settings MUST be the test_case_input
-    value - the enum/state label a human would recognize - never the numeric model_input code.
-    Also never place this value in "units" - units is only for a physical unit (ms, kg, deg,
-    km/h, etc.); an enum/state label like "FWD" or "ON" is never a unit.
+3a. Each model_input_mapping row has a human-readable "test_case_input" AND a separate internal
+    numeric "model_input" code for that same row. This rule only applies to a genuine enum/state
+    signal - one whose test_case_input values are all non-numeric labels (e.g. "FWD"/"BWD"/
+    "NEUTRAL", "P"/"S"/"E", "NL"/"FL", "ON"/"OFF"): for those, parameter_settings MUST be the
+    test_case_input label, never the numeric model_input code, and never placed in "units"
+    instead (units is only for a physical unit like ms/kg/deg/km/h - an enum label is never a
+    unit). For a continuous/analog signal whose test_case_input values are themselves numeric
+    (e.g. a slope angle row showing "0" or "3", a speed or load value) those rows are only
+    EXAMPLES, not the full set of legal values - use whatever numeric value the requirement/test
+    pattern actually calls for, not restricted to the example numbers shown.
 4. Never invent a tolerance or acceptance range. Use only an exact expected value, a comparison
    operator, or a tolerance that appears in the tolerances data given below.
 5. Prefer the current requirement/test pattern's own values over any stale remark text if they

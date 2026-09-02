@@ -41,6 +41,14 @@ def _normalize(name: str) -> str:
     return str(name).strip().lower().replace('_', '').replace(' ', '')
 
 
+def _is_numeric(value: str) -> bool:
+    try:
+        float(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def _add_row_values(known: Dict[str, str], entries: Dict[str, Any]) -> None:
     """
     Add both the dict key AND every string cell value inside each entry's
@@ -177,6 +185,17 @@ def check_enum_parameter_usage(steps: List[Dict[str, Any]], feature_bundle: Dict
     prompt wording" rationale as check_step_grounding: the Generate/Validate
     prompt states this rule too, but a deterministic check catches it even
     when the LLM doesn't follow it.
+
+    Only applies to genuine enum/state signals - a signal is treated as
+    enum-type only if EVERY test_case_input value seen for it is
+    non-numeric (e.g. FWD/BWD/NEUTRAL, P/S/E, ON/OFF). A signal whose
+    test_case_input values are themselves numeric (e.g. slope angle "0"/
+    "3", a speed or load value) is a continuous/analog signal: model_input_
+    mapping only lists a couple of *example* rows for it, not an exhaustive
+    set of legal values, so any numeric parameter_settings is accepted
+    without restriction - rejecting a value just for not literally matching
+    one of those examples would wrongly reject legitimate numbers like a
+    threshold speed or an arbitrary slope angle.
     """
     model_input_mapping = feature_bundle.get("model_input_mapping") or {}
     normalized_mapping = []
@@ -212,6 +231,12 @@ def check_enum_parameter_usage(steps: List[Dict[str, Any]], feature_bundle: Dict
             str(v["model_input"]).strip() for v in variants
             if isinstance(v, dict) and v.get("model_input") is not None
         }
+
+        # Continuous/analog signal (slope angle, speed, load, etc.) - the
+        # example test_case_input values aren't an exhaustive legal set, so
+        # don't restrict parameter_settings to only those examples.
+        if test_case_inputs and any(_is_numeric(v) for v in test_case_inputs):
+            continue
 
         param = step.get("parameter_settings")
         units = step.get("units")
