@@ -64,10 +64,18 @@ MANDATORY RULES:
    below. Never invent a signal, unit, expected value, map value, tolerance, compound name, or
    library argument - if something needed isn't present in the data, state that in "remarks"
    rather than making it up.
-1a. Each feature_details entry carries both "signal_name" (the raw CAN/HIL wiring identifier,
-    for lookup only) and "command_name" (the resolved name Set/Verify steps must actually use).
-    Always write command_name in step_text - never signal_name - even though both appear in the
-    data below.
+1a. Where to find the correct name for a Set/Verify/Wait_Until target - this differs by which
+    part of the data below it comes from, do not apply one rule to all of them:
+    - feature_details: each entry carries both "signal_name" (the raw CAN/HIL wiring identifier,
+      lookup-only) and "command_name" (the resolved name to actually use). Use command_name, not
+      signal_name, ONLY for names sourced from feature_details.
+    - model_input_mapping: there is no separate command_name here - the dict KEY itself (e.g.
+      "MDL_SWH_DIR_STATE") IS the correct name to use directly. Do not reject or second-guess a
+      model_input_mapping key for "not being a command_name" - that requirement is specific to
+      feature_details and does not apply here.
+    - compound_commands / library_list: the KEY, or the compound/library name found inside that
+      entry's own row data, is the correct name.
+    - tolerances: the KEY (e.g. "Config_Tol_Spd") is the correct name.
 2. Keep numeric values and their units in separate fields, always.
 3. Resolve any scenario-parameter-to-signal/model-input dependency (e.g. a size/mode/direction
    factor implying a particular model input, map, or load value) using the model_input_mapping

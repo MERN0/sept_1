@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from typing import Dict, Any
 import pandas as pd
@@ -40,14 +41,28 @@ class Node1ExtractRequirements:
     """
 
     @staticmethod
+    def _find_column(df, target_name: str):
+        """Case/whitespace-tolerant column lookup, e.g. 'feature number' matches
+        'Feature Number', ' Feature Number ', 'FEATURE_NUMBER', etc."""
+        target_normalized = target_name.strip().lower().replace('_', ' ')
+        for col in df.columns:
+            if str(col).strip().lower().replace('_', ' ') == target_normalized:
+                return col
+        return None
+
+    @staticmethod
     def _extract_feature_index(excel_path: str) -> Dict[str, Any]:
         """
         Read the "Index" sheet (Feature Number | Feature Name | Feature
         Group) and return {padded_feature_number: {feature_name,
         feature_group}}, e.g. "019" -> {...}. Feature Number is normalized
         to the same 3-digit zero-padded string format everywhere else in
-        this pipeline derives it from a req_id (re.search(r'(\\d{3})', req_id)),
-        even though the sheet itself stores it as a plain int (19, not 019).
+        this pipeline derives it from a req_id (re.search(r'(\\d{3})', req_id)):
+        the digits are extracted from whatever the cell contains (a bare int
+        19, a numeric string "019", or a prefixed code like "FR019" - since
+        req_id itself can carry that same "FR" style prefix) rather than
+        assuming a clean int conversion, so the key always ends up as pure
+        digits and actually matches the req_id-derived lookup.
         Returns {} if there's no Index sheet - it's supplementary, not a
         hard requirement for extraction to proceed.
         """
@@ -56,19 +71,31 @@ class Node1ExtractRequirements:
         except Exception:
             return {}
 
+        number_col = Node1ExtractRequirements._find_column(index_df, "Feature Number")
+        name_col = Node1ExtractRequirements._find_column(index_df, "Feature Name")
+        group_col = Node1ExtractRequirements._find_column(index_df, "Feature Group")
+
+        if number_col is None:
+            return {}
+
         feature_index = {}
         for _, row in index_df.iterrows():
-            raw_number = row.get("Feature Number")
+            raw_number = row.get(number_col)
             if pd.isna(raw_number):
                 continue
-            try:
-                padded = f"{int(raw_number):03d}"
-            except (TypeError, ValueError):
-                padded = str(raw_number).strip()
+
+            digits_match = re.search(r'(\d+)', str(raw_number))
+            if not digits_match:
+                continue
+            padded = digits_match.group(1).zfill(3)
 
             feature_index[padded] = {
-                "feature_name": None if pd.isna(row.get("Feature Name")) else str(row.get("Feature Name")).strip(),
-                "feature_group": None if pd.isna(row.get("Feature Group")) else str(row.get("Feature Group")).strip(),
+                "feature_name": (
+                    None if name_col is None or pd.isna(row.get(name_col)) else str(row.get(name_col)).strip()
+                ),
+                "feature_group": (
+                    None if group_col is None or pd.isna(row.get(group_col)) else str(row.get(group_col)).strip()
+                ),
             }
         return feature_index
 
