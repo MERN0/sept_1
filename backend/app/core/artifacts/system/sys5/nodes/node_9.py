@@ -9,10 +9,14 @@ if _workspace_root not in sys.path:
 
 try:
     from ..state import SYS5State
-    from ..prompts import build_correct_input, build_correct_prompt
+    from ..config import get_llm
+    from ..prompts import build_correct_input, build_correct_prompt, parse_json_response
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
-    from backend.app.core.artifacts.system.sys5.prompts import build_correct_input, build_correct_prompt
+    from backend.app.core.artifacts.system.sys5.config import get_llm
+    from backend.app.core.artifacts.system.sys5.prompts import (
+        build_correct_input, build_correct_prompt, parse_json_response
+    )
 
 
 class Node9CorrectTestCases:
@@ -26,10 +30,6 @@ class Node9CorrectTestCases:
     proceeds to END. With max_corrections=1 that means exactly one
     Validate -> Correct pass before moving on; with max_corrections=2, a
     second Validate -> Correct pass is allowed, etc.
-
-    Until CORRECT_PROMPT_TEMPLATE (prompts.py) is written, this only
-    increments correction_count (so the loop still terminates correctly
-    once real prompts are in place) without calling an LLM.
     """
 
     @staticmethod
@@ -45,6 +45,15 @@ class Node9CorrectTestCases:
 
         print(f"[LOG] max_corrections configured: {max_corrections}\n")
 
+        try:
+            llm = get_llm()
+        except Exception as e:
+            error_msg = f"Could not initialize LLM: {str(e)}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
         for req_id, entry in test_cases.items():
             validation_result = entry.get("validation_result") or {}
             if validation_result.get("valid") is not False:
@@ -59,13 +68,17 @@ class Node9CorrectTestCases:
             )
             prompt = build_correct_prompt(correct_input)
 
-            if prompt is None:
-                print(f"[LOG] Correct prompt not yet configured - counting attempt for {req_id} without an LLM call\n")
-                entry["status"] = "pending_prompt"
-            else:
-                # Once CORRECT_PROMPT_TEMPLATE is written, invoke the LLM here
-                # and parse its response back into generated_output.
+            try:
+                response = llm.invoke(prompt)
+                corrected_output = parse_json_response(response.content, fallback=None)
+                if corrected_output is None:
+                    raise ValueError("Correct response did not contain parseable JSON")
+                entry["generated_output"] = corrected_output
                 entry["status"] = "corrected"
+                print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
+            except Exception as e:
+                print(f"[WARNING] Correct failed for {req_id}: {str(e)}\n")
+                entry["status"] = "correct_failed"
 
             entry["correction_count"] = entry.get("correction_count", 0) + 1
 

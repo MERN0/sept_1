@@ -11,11 +11,15 @@ if _workspace_root not in sys.path:
 try:
     from ..state import SYS5State
     from ..utils import drop_empty_values
-    from ..prompts import build_generate_input, build_generate_prompt
+    from ..config import get_llm
+    from ..prompts import build_generate_input, build_generate_prompt, parse_json_response
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.utils import drop_empty_values
-    from backend.app.core.artifacts.system.sys5.prompts import build_generate_input, build_generate_prompt
+    from backend.app.core.artifacts.system.sys5.config import get_llm
+    from backend.app.core.artifacts.system.sys5.prompts import (
+        build_generate_input, build_generate_prompt, parse_json_response
+    )
 
 
 class Node7GenerateTestCases:
@@ -25,11 +29,8 @@ class Node7GenerateTestCases:
     For each requirement's test pattern, bundles together the requirement,
     the test pattern, and the relevant feature data (feature_details +
     model_input_mapping/tolerances/compound_commands/library_list from
-    model_config) into a single input, then calls the Generate prompt
-    (backend/app/core/artifacts/system/sys5/prompts.py). The actual prompt
-    text isn't written yet, so until it is, this node stores the assembled
-    input for each test pattern with a "pending_prompt" status instead of
-    calling an LLM.
+    model_config) into a single input, sends it to the LLM via the Generate
+    prompt (prompts.py), and stores the parsed test case JSON.
     """
 
     @staticmethod
@@ -69,6 +70,15 @@ class Node7GenerateTestCases:
         requirements_by_id = {req.get("req_id"): req for req in requirements}
         test_cases = dict(state.get("test_cases") or {})
 
+        try:
+            llm = get_llm()
+        except Exception as e:
+            error_msg = f"Could not initialize LLM: {str(e)}"
+            print(f"[ERROR] {error_msg}\n")
+            errors.append(error_msg)
+            state["errors"] = errors
+            return state
+
         for req_id, test_pattern in test_patterns.items():
             print(f"[LOG] Processing test pattern for {req_id} (1 at a time)...")
 
@@ -87,27 +97,26 @@ class Node7GenerateTestCases:
             generate_input = build_generate_input(requirement, test_pattern, feature_bundle)
             prompt = build_generate_prompt(generate_input)
 
-            if prompt is None:
-                print(f"[LOG] Generate prompt not yet configured - storing input bundle only for {req_id}\n")
-                test_cases[req_id] = {
-                    "req_id": req_id,
-                    "generate_input": generate_input,
-                    "generated_output": None,
-                    "validation_result": None,
-                    "correction_count": 0,
-                    "status": "pending_prompt",
-                }
-                continue
+            try:
+                response = llm.invoke(prompt)
+                generated_output = parse_json_response(response.content, fallback=None)
+                if generated_output is None:
+                    raise ValueError("LLM response did not contain parseable JSON")
+                status = "generated"
+                print(f"[LOG] Generated test case {generated_output.get('test_case_id', req_id)} "
+                      f"with {len(generated_output.get('steps', []))} steps\n")
+            except Exception as e:
+                print(f"[WARNING] Generate failed for {req_id}: {str(e)}\n")
+                generated_output = None
+                status = "generate_failed"
 
-            # Once GENERATE_PROMPT_TEMPLATE is written, invoke the LLM here
-            # and parse its response into generated_output.
             test_cases[req_id] = {
                 "req_id": req_id,
                 "generate_input": generate_input,
-                "generated_output": None,
+                "generated_output": generated_output,
                 "validation_result": None,
                 "correction_count": 0,
-                "status": "generated",
+                "status": status,
             }
 
         state["test_cases"] = test_cases
