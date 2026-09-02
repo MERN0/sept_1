@@ -42,6 +42,7 @@ prompts (prompts.py) are written.
 """
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -240,6 +241,21 @@ def _write_test_cases(wb: Workbook, test_cases: List[Dict[str, Any]]) -> None:
         ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = width
 
 
+def _feature_name_for(req_id: str, feature_index: Dict[str, Any], fallback: str) -> str:
+    """
+    The Feature column must be the real Feature Name from the Index sheet
+    (state["feature_index"], Node 1), never the LLM-generated value - only
+    fall back to whatever Generate produced if the requirement's feature
+    number can't be resolved in the index at all (e.g. no Index sheet).
+    """
+    match = re.search(r'(\d{3})', req_id or "")
+    if match:
+        entry = feature_index.get(match.group(1))
+        if entry and entry.get("feature_name"):
+            return entry["feature_name"]
+    return fallback
+
+
 def _normalize_test_cases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Build the flat list write_test_cases_workbook's sheet writers expect,
@@ -248,13 +264,14 @@ def _normalize_test_cases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     been generated yet, so Item List / Test Cases still get a usable row.
     """
     requirements_by_id = {req.get("req_id"): req for req in state.get("requirements", [])}
+    feature_index = state.get("feature_index", {})
     normalized = []
     for req_id, entry in state.get("test_cases", {}).items():
         generated = entry.get("generated_output") or {}
         requirement = requirements_by_id.get(req_id, {})
         normalized.append({
             "test_case_id": generated.get("test_case_id", req_id),
-            "feature": generated.get("feature", ""),
+            "feature": _feature_name_for(req_id, feature_index, generated.get("feature", "")),
             "variant": generated.get("variant"),
             "requirement_ids": generated.get("requirement_ids", [req_id]),
             "priority": generated.get("priority"),

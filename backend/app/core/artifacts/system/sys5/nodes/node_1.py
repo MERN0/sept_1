@@ -40,6 +40,39 @@ class Node1ExtractRequirements:
     """
 
     @staticmethod
+    def _extract_feature_index(excel_path: str) -> Dict[str, Any]:
+        """
+        Read the "Index" sheet (Feature Number | Feature Name | Feature
+        Group) and return {padded_feature_number: {feature_name,
+        feature_group}}, e.g. "019" -> {...}. Feature Number is normalized
+        to the same 3-digit zero-padded string format everywhere else in
+        this pipeline derives it from a req_id (re.search(r'(\\d{3})', req_id)),
+        even though the sheet itself stores it as a plain int (19, not 019).
+        Returns {} if there's no Index sheet - it's supplementary, not a
+        hard requirement for extraction to proceed.
+        """
+        try:
+            index_df = pd.read_excel(excel_path, sheet_name="Index")
+        except Exception:
+            return {}
+
+        feature_index = {}
+        for _, row in index_df.iterrows():
+            raw_number = row.get("Feature Number")
+            if pd.isna(raw_number):
+                continue
+            try:
+                padded = f"{int(raw_number):03d}"
+            except (TypeError, ValueError):
+                padded = str(raw_number).strip()
+
+            feature_index[padded] = {
+                "feature_name": None if pd.isna(row.get("Feature Name")) else str(row.get("Feature Name")).strip(),
+                "feature_group": None if pd.isna(row.get("Feature Group")) else str(row.get("Feature Group")).strip(),
+            }
+        return feature_index
+
+    @staticmethod
     def execute(state: SYS5State) -> SYS5State:
         """
         Execute Node 1 - Requirements Extraction
@@ -58,6 +91,7 @@ class Node1ExtractRequirements:
         requirements = []
         errors = []
         test_patterns_data = {}
+        feature_index = {}
 
         # Extract configuration
         input_folder = config.get("input_folder_path")
@@ -92,6 +126,11 @@ class Node1ExtractRequirements:
 
             print(f"[LOG] Total rows in sheet: {len(df)}")
             print(f"[LOG] Columns: {list(df.columns)}\n")
+
+            # Feature Number -> {feature_name, feature_group} from the Index sheet -
+            # the authoritative source for the output workbook's Feature column
+            feature_index = Node1ExtractRequirements._extract_feature_index(abs_excel_path)
+            print(f"[LOG] Feature index loaded from Index sheet: {len(feature_index)} features\n")
 
             # Extract functional requirements
             print(f"[LOG] Scanning rows using configured keywords...")
@@ -240,6 +279,7 @@ class Node1ExtractRequirements:
         # Update state
         state["requirements"] = requirements
         state["test_patterns"] = test_patterns_data
+        state["feature_index"] = feature_index
         state["errors"] = errors
 
         # Print completion status

@@ -12,6 +12,9 @@ class SYS5State(TypedDict):
     - config: Input configuration
     - requirements: Extracted requirements data (Node 1)
     - test_patterns: LLM-generated test patterns keyed by req_id (Node 1)
+    - feature_index: Feature Number -> {feature_name, feature_group} from the
+      Index sheet (Node 1) - the authoritative source for the output workbook's
+      Feature column, never the LLM-generated value
     - feature_details: Signal/command data keyed by signal name (Node 2 - Signal Name,
       Node 3 - Logical Signal Name with underscore), so entries can be looked up later
     - logical_signals: Logical signal extraction results (Node 3)
@@ -25,6 +28,7 @@ class SYS5State(TypedDict):
     config: Dict[str, Any]
     requirements: List[Dict[str, Any]]
     test_patterns: Dict[str, Any]
+    feature_index: Dict[str, Any]
     feature_details: Dict[str, Any]
     logical_signals: List[Dict[str, Any]]
     model_config: Dict[str, Any]
