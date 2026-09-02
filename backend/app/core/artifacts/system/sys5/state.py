@@ -22,6 +22,7 @@ class SYS5State(TypedDict):
       Library List, bundled with test patterns for later requirement <-> config
       mapping (Node 5, Node 6)
     - test_cases: Generate/Validate/Correct working data, keyed by req_id (Node 7-9)
+    - agent_chain: List of agent configurations with prompts (agent_name, agent_version, prompt_content)
     - errors: Any errors encountered during processing
     - timestamp: Execution timestamp for artifacts
     """
@@ -33,5 +34,6 @@ class SYS5State(TypedDict):
     logical_signals: List[Dict[str, Any]]
     model_config: Dict[str, Any]
     test_cases: Dict[str, Any]
+    agent_chain: List[Dict[str, Any]]
     errors: List[str]
     timestamp: str

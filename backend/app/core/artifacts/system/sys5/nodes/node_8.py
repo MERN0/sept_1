@@ -10,7 +10,8 @@ if _workspace_root not in sys.path:
 try:
     from ..state import SYS5State
     from ..config import get_llm
-    from ..prompts import build_validate_input, build_validate_prompt
+    from ..prompts import build_validate_input
+    from ..utils.agentchain_prompts import get_prompt_from_agentchain
     from ..schema import parse_and_validate_validation_result
     from ..utils import (
         check_step_grounding, check_enum_parameter_usage, check_remarks_present,
@@ -19,7 +20,8 @@ try:
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
-    from backend.app.core.artifacts.system.sys5.prompts import build_validate_input, build_validate_prompt
+    from backend.app.core.artifacts.system.sys5.prompts import build_validate_input
+    from backend.app.core.artifacts.system.sys5.utils.agentchain_prompts import get_prompt_from_agentchain
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_validation_result
     from backend.app.core.artifacts.system.sys5.utils import (
         check_step_grounding, check_enum_parameter_usage, check_remarks_present,
@@ -65,6 +67,7 @@ class Node8ValidateTestCases:
 
         test_cases = dict(state.get("test_cases") or {})
         errors = state.get("errors", [])
+        agentchain = state.get("agent_chain", [])
 
         try:
             llm = get_llm()
@@ -112,7 +115,29 @@ class Node8ValidateTestCases:
 
             # 5. LLM Validate prompt for everything the deterministic checks can't see
             validate_input = build_validate_input(entry.get("generate_input", {}), generated_output)
-            prompt = build_validate_prompt(validate_input)
+
+            # Get prompt from agentchain (verification_agent), or use fallback
+            prompt = get_prompt_from_agentchain(agentchain, "verification_agent")
+            if not prompt:
+                print(f"[LOG] verification_agent prompt not found in agentchain, using fallback\n")
+                from ..prompts import build_validate_prompt as fallback_build_validate_prompt
+                prompt = fallback_build_validate_prompt(validate_input)
+            else:
+                # Format the prompt template with actual data
+                import json
+                try:
+                    prompt = prompt.format(
+                        generated_output=json.dumps(generated_output, indent=2, default=str),
+                        requirement_and_pattern=json.dumps({
+                            "requirement": validate_input.get("generate_input", {}).get("requirement", {}),
+                            "test_pattern": validate_input.get("generate_input", {}).get("test_pattern", {})
+                        }, indent=2, default=str),
+                        feature_bundle=json.dumps(validate_input.get("generate_input", {}).get("feature_bundle", {}), indent=2, default=str)
+                    )
+                except KeyError as fmt_err:
+                    print(f"[WARNING] Failed to format prompt template: {fmt_err}, using fallback\n")
+                    from ..prompts import build_validate_prompt as fallback_build_validate_prompt
+                    prompt = fallback_build_validate_prompt(validate_input)
 
             try:
                 response = llm.invoke(prompt)

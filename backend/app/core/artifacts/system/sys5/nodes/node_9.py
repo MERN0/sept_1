@@ -11,13 +11,15 @@ if _workspace_root not in sys.path:
 try:
     from ..state import SYS5State
     from ..config import get_llm
-    from ..prompts import build_correct_input, build_correct_prompt
+    from ..prompts import build_correct_input
+    from ..utils.agentchain_prompts import get_prompt_from_agentchain
     from ..schema import parse_and_validate_test_case
     from ..utils import ensure_test_start_end
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
-    from backend.app.core.artifacts.system.sys5.prompts import build_correct_input, build_correct_prompt
+    from backend.app.core.artifacts.system.sys5.prompts import build_correct_input
+    from backend.app.core.artifacts.system.sys5.utils.agentchain_prompts import get_prompt_from_agentchain
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_test_case
     from backend.app.core.artifacts.system.sys5.utils import ensure_test_start_end
 
@@ -45,6 +47,7 @@ class Node9CorrectTestCases:
         max_corrections = config.get("max_corrections", 1)
         test_cases = dict(state.get("test_cases") or {})
         errors = state.get("errors", [])
+        agentchain = state.get("agent_chain", [])
 
         print(f"[LOG] max_corrections configured: {max_corrections}\n")
 
@@ -69,7 +72,27 @@ class Node9CorrectTestCases:
             correct_input = build_correct_input(
                 entry.get("generate_input", {}), entry.get("generated_output"), validation_result
             )
-            prompt = build_correct_prompt(correct_input)
+
+            # Get prompt from agentchain (qa_agent), or use fallback
+            prompt = get_prompt_from_agentchain(agentchain, "qa_agent")
+            if not prompt:
+                print(f"[LOG] qa_agent prompt not found in agentchain, using fallback\n")
+                from ..prompts import build_correct_prompt as fallback_build_correct_prompt
+                prompt = fallback_build_correct_prompt(correct_input)
+            else:
+                # Format the prompt template with actual data
+                import json
+                try:
+                    prompt = prompt.format(
+                        generated_output=json.dumps(correct_input.get("generated_output", {}), indent=2, default=str),
+                        validation_issues=json.dumps(correct_input.get("validation_result", {}).get("issues", []), indent=2, default=str),
+                        feature_bundle=json.dumps(correct_input.get("generate_input", {}).get("feature_bundle", {}), indent=2, default=str),
+                        test_case_json_shape=json.dumps({}, indent=2)
+                    )
+                except KeyError as fmt_err:
+                    print(f"[WARNING] Failed to format prompt template: {fmt_err}, using fallback\n")
+                    from ..prompts import build_correct_prompt as fallback_build_correct_prompt
+                    prompt = fallback_build_correct_prompt(correct_input)
 
             try:
                 response = llm.invoke(prompt)
