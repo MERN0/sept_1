@@ -10,13 +10,13 @@ if _workspace_root not in sys.path:
 
 try:
     from ..state import SYS5State
-    from ..utils import drop_empty_values
+    from ..utils import drop_empty_values, ensure_test_start_end
     from ..config import get_llm
     from ..prompts import build_generate_input, build_generate_prompt
     from ..schema import parse_and_validate_test_case
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
-    from backend.app.core.artifacts.system.sys5.utils import drop_empty_values
+    from backend.app.core.artifacts.system.sys5.utils import drop_empty_values, ensure_test_start_end
     from backend.app.core.artifacts.system.sys5.config import get_llm
     from backend.app.core.artifacts.system.sys5.prompts import build_generate_input, build_generate_prompt
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_test_case
@@ -127,9 +127,14 @@ class Node7GenerateTestCases:
                     response = llm.invoke(prompt)
                     generated_output = parse_and_validate_test_case(response.content)
                     generated_output["test_case_id"] = test_case_id
+                    generated_output["steps"], bookend_fixes = ensure_test_start_end(
+                        generated_output.get("steps", [])
+                    )
                     status = "generated"
                     print(f"[LOG] Generated test case {test_case_id} for {req_id} (pattern #{pattern_no}) "
                           f"with {len(generated_output.get('steps', []))} steps\n")
+                    if bookend_fixes:
+                        print(f"[LOG] {test_case_id}: {'; '.join(bookend_fixes)}\n")
                 except Exception as e:
                     print(f"[WARNING] Generate failed for {req_id} pattern #{pattern_no}: {str(e)}\n")
                     generated_output = None

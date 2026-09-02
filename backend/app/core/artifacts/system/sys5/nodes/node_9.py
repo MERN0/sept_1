@@ -12,11 +12,13 @@ try:
     from ..config import get_llm
     from ..prompts import build_correct_input, build_correct_prompt
     from ..schema import parse_and_validate_test_case
+    from ..utils import ensure_test_start_end
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
     from backend.app.core.artifacts.system.sys5.prompts import build_correct_input, build_correct_prompt
     from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_test_case
+    from backend.app.core.artifacts.system.sys5.utils import ensure_test_start_end
 
 
 class Node9CorrectTestCases:
@@ -78,9 +80,14 @@ class Node9CorrectTestCases:
                 canonical_id = entry.get("test_case_id")
                 if canonical_id:
                     corrected_output["test_case_id"] = canonical_id
+                corrected_output["steps"], bookend_fixes = ensure_test_start_end(
+                    corrected_output.get("steps", [])
+                )
                 entry["generated_output"] = corrected_output
                 entry["status"] = "corrected"
                 print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
+                if bookend_fixes:
+                    print(f"[LOG] {req_id}: {'; '.join(bookend_fixes)}\n")
             except Exception as e:
                 print(f"[WARNING] Correct failed for {req_id}: {str(e)}\n")
                 entry["status"] = "correct_failed"

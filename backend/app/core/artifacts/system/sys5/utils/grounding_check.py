@@ -277,3 +277,32 @@ def check_remarks_present(steps: List[Dict[str, Any]]) -> List[str]:
                 f"every step must include a remark explaining what it does or why"
             )
     return issues
+
+
+def check_test_start_end_present(steps: List[Dict[str, Any]]) -> List[str]:
+    """
+    Every test case's step list must open with Test_Start and close with
+    End_of_test - the LLM sometimes drops one or both (most often on a short
+    test case, or after a Correct pass reshuffles the steps). The grammar
+    rules already describe what these two keywords are for, but nothing
+    actually required their presence, so a step list missing either one
+    would sail through the phase-order/grounding/enum checks undetected.
+    Same "trust code over prompt wording" rationale as the other checks
+    here: deterministic, not left to the LLM to remember.
+    """
+    if not steps:
+        return ["Test case has no steps at all - missing both Test_Start and End_of_test"]
+
+    issues = []
+    first_keyword = str(steps[0].get("step_text", "")).strip().split()[0] if steps[0].get("step_text") else ""
+    last_keyword = str(steps[-1].get("step_text", "")).strip().split()[0] if steps[-1].get("step_text") else ""
+
+    if first_keyword != "Test_Start":
+        issues.append(
+            f"First step must be 'Test_Start' - found '{steps[0].get('step_text', '')}' instead"
+        )
+    if last_keyword != "End_of_test":
+        issues.append(
+            f"Last step must be 'End_of_test' - found '{steps[-1].get('step_text', '')}' instead"
+        )
+    return issues

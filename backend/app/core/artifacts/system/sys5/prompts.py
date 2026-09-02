@@ -94,7 +94,9 @@ MANDATORY RULES:
    operator, or a tolerance that appears in the tolerances data given below.
 5. Prefer the current requirement/test pattern's own values over any stale remark text if they
    conflict.
-6. Steps must be ordered PRECONDITION, then ACTION, then POSTCONDITION.
+6. Steps must be ordered PRECONDITION, then ACTION, then POSTCONDITION. The FIRST step of every
+   test case MUST be Test_Start and the LAST step MUST be End_of_test - never omit either one,
+   even for a short test case with only one or two other steps.
 7. "remarks" is REQUIRED on every single step - never null, never an empty string. State briefly
    what the step does or why it's there (e.g. "sets baseline speed before applying the ramp",
    "confirms motor returns to idle after the test")."""
