@@ -49,19 +49,28 @@ def ensure_test_start_end(steps: List[Dict[str, Any]]) -> Tuple[List[Dict[str, A
     Returns (steps, fixes) - fixes is a list of human-readable strings
     describing what was inserted, empty if the step list was already
     correct, so callers can log when this actually had to do something.
+    This function is guaranteed to always return a 2-tuple, never raise,
+    and never return None - callers unpack its result directly, so if
+    something about the input is unexpectedly malformed (e.g. a step that
+    isn't a dict), this falls back to returning the input unchanged rather
+    than ever propagating an exception or a bare None out of this call.
     """
-    steps = list(steps) if steps else []
-    fixes = []
+    original = steps
+    try:
+        steps = list(steps) if steps else []
+        fixes = []
 
-    if not steps or _first_keyword(steps[0]) != "Test_Start":
-        steps.insert(0, dict(_TEST_START_STEP))
-        fixes.append("inserted missing Test_Start step at the start")
+        if not steps or _first_keyword(steps[0]) != "Test_Start":
+            steps.insert(0, dict(_TEST_START_STEP))
+            fixes.append("inserted missing Test_Start step at the start")
 
-    if _first_keyword(steps[-1]) != "End_of_test":
-        steps.append(dict(_END_OF_TEST_STEP))
-        fixes.append("inserted missing End_of_test step at the end")
+        if _first_keyword(steps[-1]) != "End_of_test":
+            steps.append(dict(_END_OF_TEST_STEP))
+            fixes.append("inserted missing End_of_test step at the end")
 
-    for i, step in enumerate(steps, start=1):
-        step["step_no"] = i
+        for i, step in enumerate(steps, start=1):
+            step["step_no"] = i
 
-    return steps, fixes
+        return steps, fixes
+    except Exception:
+        return (list(original) if isinstance(original, list) else []), []
