@@ -76,6 +76,11 @@ class Node7GenerateTestCases:
         errors = state.get("errors", [])
         agentchain = state.get("agent_chain", [])
 
+        print(f"[LOG] Agent chain status: {len(agentchain)} agents available\n")
+        if agentchain:
+            agents = [a.get("agent_name") for a in agentchain if isinstance(a, dict)]
+            print(f"[LOG] Available agents: {agents}\n")
+
         # Drop empty/null/NaN entries before building anything from this data
         feature_details = drop_empty_values(state.get("feature_details", {}))
         model_config = drop_empty_values(state.get("model_config", {}))

@@ -54,6 +54,7 @@ def run_workflow(config: Dict[str, Any]) -> str:
         "logical_signals": [],
         "model_config": {},
         "test_cases": {},
+        "agent_chain": config.get("agent_chain", []),
         "errors": [],
         "timestamp": timestamp
     }
