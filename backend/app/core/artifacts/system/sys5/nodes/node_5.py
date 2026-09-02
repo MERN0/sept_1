@@ -66,14 +66,19 @@ class Node5ExtractModelConfig:
 
     @staticmethod
     def _collect_known_signal_names(feature_details):
-        """Pull signal_name / logical_signal_name values out of feature_details entries"""
+        """
+        Pull command_name values out of feature_details entries. Signal
+        Name is only the raw CAN/HIL identifier used to look up the row in
+        Command List (Node 2/3) - command_name is the resolved name that
+        actually belongs in generated test steps, so matching must key off
+        that, not signal_name/logical_signal_name.
+        """
         known = set()
         for entry in feature_details.values():
             if not isinstance(entry, dict):
                 continue
-            for key in ("signal_name", "logical_signal_name"):
-                if entry.get(key):
-                    known.add(str(entry[key]))
+            if entry.get("command_name"):
+                known.add(str(entry["command_name"]))
         return known
 
     @staticmethod

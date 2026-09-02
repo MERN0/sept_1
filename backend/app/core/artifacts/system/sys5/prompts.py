@@ -64,6 +64,10 @@ MANDATORY RULES:
    below. Never invent a signal, unit, expected value, map value, tolerance, compound name, or
    library argument - if something needed isn't present in the data, state that in "remarks"
    rather than making it up.
+1a. Each feature_details entry carries both "signal_name" (the raw CAN/HIL wiring identifier,
+    for lookup only) and "command_name" (the resolved name Set/Verify steps must actually use).
+    Always write command_name in step_text - never signal_name - even though both appear in the
+    data below.
 2. Keep numeric values and their units in separate fields, always.
 3. Resolve any scenario-parameter-to-signal/model-input dependency (e.g. a size/mode/direction
    factor implying a particular model input, map, or load value) using the model_input_mapping

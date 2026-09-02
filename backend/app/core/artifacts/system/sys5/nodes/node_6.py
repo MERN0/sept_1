@@ -75,17 +75,21 @@ class Node6ExtractCompoundAndLibrary:
 
     @staticmethod
     def _collect_known_first_tokens(feature_details):
-        """First underscore-token of each known signal_name/logical_signal_name"""
+        """
+        First underscore-token of each known command_name. Signal Name is
+        only the raw lookup key into Command List (Node 2/3) - command_name
+        is the resolved name that actually belongs in generated test steps,
+        so matching must key off that, not signal_name/logical_signal_name.
+        """
         tokens = set()
         for entry in feature_details.values():
             if not isinstance(entry, dict):
                 continue
-            for key in ("signal_name", "logical_signal_name"):
-                name = entry.get(key)
-                if name:
-                    first_token = str(name).split('_')[0].strip().lower()
-                    if first_token:
-                        tokens.add(first_token)
+            name = entry.get("command_name")
+            if name:
+                first_token = str(name).split('_')[0].strip().lower()
+                if first_token:
+                    tokens.add(first_token)
         return tokens
 
     @staticmethod

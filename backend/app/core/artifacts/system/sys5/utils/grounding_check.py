@@ -34,18 +34,22 @@ def collect_known_names(feature_bundle: Dict[str, Any]) -> Dict[str, str]:
     """
     Build {normalized_name: original_name} from every name-bearing source in
     the feature bundle a Generate/Validate call was given: feature_details
-    signal names, compound_commands keys, library_list keys, and tolerances
+    command names, compound_commands keys, library_list keys, and tolerances
     keys (Config_Tol_* references inside Verify/Set steps).
+
+    Uses command_name, not signal_name/logical_signal_name - Signal Name is
+    only the raw CAN/HIL identifier used to look up the row in Command List
+    (Node 2/3); command_name is the resolved name that actually belongs in
+    a generated Set/Verify step, so grounding must check against that.
     """
     known = {}
 
     for entry in (feature_bundle.get("feature_details") or {}).values():
         if not isinstance(entry, dict):
             continue
-        for key in ("signal_name", "logical_signal_name"):
-            name = entry.get(key)
-            if name:
-                known[_normalize(name)] = str(name)
+        name = entry.get("command_name")
+        if name:
+            known[_normalize(name)] = str(name)
 
     for key in (feature_bundle.get("compound_commands") or {}).keys():
         known[_normalize(key)] = key
