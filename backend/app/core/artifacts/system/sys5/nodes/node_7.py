@@ -12,14 +12,14 @@ try:
     from ..state import SYS5State
     from ..utils import drop_empty_values
     from ..config import get_llm
-    from ..prompts import build_generate_input, build_generate_prompt, parse_json_response
+    from ..prompts import build_generate_input, build_generate_prompt
+    from ..schema import parse_and_validate_test_case
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.utils import drop_empty_values
     from backend.app.core.artifacts.system.sys5.config import get_llm
-    from backend.app.core.artifacts.system.sys5.prompts import (
-        build_generate_input, build_generate_prompt, parse_json_response
-    )
+    from backend.app.core.artifacts.system.sys5.prompts import build_generate_input, build_generate_prompt
+    from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_test_case
 
 
 class Node7GenerateTestCases:
@@ -99,9 +99,7 @@ class Node7GenerateTestCases:
 
             try:
                 response = llm.invoke(prompt)
-                generated_output = parse_json_response(response.content, fallback=None)
-                if generated_output is None:
-                    raise ValueError("LLM response did not contain parseable JSON")
+                generated_output = parse_and_validate_test_case(response.content)
                 status = "generated"
                 print(f"[LOG] Generated test case {generated_output.get('test_case_id', req_id)} "
                       f"with {len(generated_output.get('steps', []))} steps\n")

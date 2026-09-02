@@ -10,14 +10,14 @@ if _workspace_root not in sys.path:
 try:
     from ..state import SYS5State
     from ..config import get_llm
-    from ..prompts import build_validate_input, build_validate_prompt, parse_json_response
+    from ..prompts import build_validate_input, build_validate_prompt
+    from ..schema import parse_and_validate_validation_result
     from ..utils import check_step_grounding
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
-    from backend.app.core.artifacts.system.sys5.prompts import (
-        build_validate_input, build_validate_prompt, parse_json_response
-    )
+    from backend.app.core.artifacts.system.sys5.prompts import build_validate_input, build_validate_prompt
+    from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_validation_result
     from backend.app.core.artifacts.system.sys5.utils import check_step_grounding
 
 
@@ -77,9 +77,7 @@ class Node8ValidateTestCases:
 
             try:
                 response = llm.invoke(prompt)
-                validation_result = parse_json_response(
-                    response.content, fallback={"valid": False, "issues": ["Validate response was not parseable JSON"]}
-                )
+                validation_result = parse_and_validate_validation_result(response.content)
                 entry["status"] = "validated"
             except Exception as e:
                 print(f"[WARNING] Validate failed for {req_id}: {str(e)}\n")

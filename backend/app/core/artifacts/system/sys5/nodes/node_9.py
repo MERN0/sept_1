@@ -10,13 +10,13 @@ if _workspace_root not in sys.path:
 try:
     from ..state import SYS5State
     from ..config import get_llm
-    from ..prompts import build_correct_input, build_correct_prompt, parse_json_response
+    from ..prompts import build_correct_input, build_correct_prompt
+    from ..schema import parse_and_validate_test_case
 except ImportError:
     from backend.app.core.artifacts.system.sys5.state import SYS5State
     from backend.app.core.artifacts.system.sys5.config import get_llm
-    from backend.app.core.artifacts.system.sys5.prompts import (
-        build_correct_input, build_correct_prompt, parse_json_response
-    )
+    from backend.app.core.artifacts.system.sys5.prompts import build_correct_input, build_correct_prompt
+    from backend.app.core.artifacts.system.sys5.schema import parse_and_validate_test_case
 
 
 class Node9CorrectTestCases:
@@ -70,9 +70,7 @@ class Node9CorrectTestCases:
 
             try:
                 response = llm.invoke(prompt)
-                corrected_output = parse_json_response(response.content, fallback=None)
-                if corrected_output is None:
-                    raise ValueError("Correct response did not contain parseable JSON")
+                corrected_output = parse_and_validate_test_case(response.content)
                 entry["generated_output"] = corrected_output
                 entry["status"] = "corrected"
                 print(f"[LOG] {req_id}: corrected (attempt {entry.get('correction_count', 0) + 1})\n")
